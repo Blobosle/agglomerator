@@ -161,6 +161,164 @@ function openWebsite(url: string) {
   void openUrl(getOpenableUrl(url)).catch(() => undefined);
 }
 
+function WebsiteHeader({
+  website,
+  isSelectingForDelete,
+  onDelete,
+}: {
+  website: WebsiteRecord;
+  isSelectingForDelete: boolean;
+  onDelete: () => void;
+}) {
+  const nameColumnRef = useRef<HTMLDivElement>(null);
+  const nameTextRef = useRef<HTMLSpanElement>(null);
+  const linkColumnRef = useRef<HTMLButtonElement>(null);
+  const linkTextRef = useRef<HTMLSpanElement>(null);
+  const displayUrl = getDisplayUrl(website.url);
+  const [hoverLayout, setHoverLayout] = useState({
+    nameColumnWidth: 0,
+    nameOverflows: false,
+    linkColumnWidth: 0,
+    linkOverflows: false,
+  });
+
+  useEffect(() => {
+    function measureHoverLayout() {
+      const nameColumnWidth = nameColumnRef.current?.clientWidth ?? 0;
+      const linkColumnWidth = linkColumnRef.current?.clientWidth ?? 0;
+      const nameOverflows =
+        (nameTextRef.current?.scrollWidth ?? 0) > nameColumnWidth + 1;
+      const linkOverflows =
+        (linkTextRef.current?.scrollWidth ?? 0) > linkColumnWidth + 1;
+
+      setHoverLayout((currentLayout) => {
+        if (
+          currentLayout.nameColumnWidth === nameColumnWidth &&
+          currentLayout.nameOverflows === nameOverflows &&
+          currentLayout.linkColumnWidth === linkColumnWidth &&
+          currentLayout.linkOverflows === linkOverflows
+        ) {
+          return currentLayout;
+        }
+
+        return {
+          nameColumnWidth,
+          nameOverflows,
+          linkColumnWidth,
+          linkOverflows,
+        };
+      });
+    }
+
+    const animationFrame = window.requestAnimationFrame(measureHoverLayout);
+    window.addEventListener("resize", measureHoverLayout);
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureHoverLayout);
+
+    if (resizeObserver) {
+      if (nameColumnRef.current) {
+        resizeObserver.observe(nameColumnRef.current);
+      }
+
+      if (linkColumnRef.current) {
+        resizeObserver.observe(linkColumnRef.current);
+      }
+    }
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", measureHoverLayout);
+      resizeObserver?.disconnect();
+    };
+  }, [displayUrl, website.name]);
+
+  return (
+    <div className="relative grid min-h-5 grid-cols-[minmax(0,2fr)_minmax(4.5rem,1fr)] items-start gap-x-4">
+      <div
+        ref={nameColumnRef}
+        className={`group/name min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
+          isSelectingForDelete
+            ? "cursor-pointer bg-red-50 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
+            : "cursor-text focus-visible:outline-blue-300"
+        }`}
+        role={isSelectingForDelete ? "button" : undefined}
+        tabIndex={isSelectingForDelete ? 0 : undefined}
+        onClick={() => {
+          if (isSelectingForDelete) {
+            onDelete();
+          }
+        }}
+        onKeyDown={(event) => {
+          if (!isSelectingForDelete) {
+            return;
+          }
+
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onDelete();
+          }
+        }}
+      >
+        <span ref={nameTextRef} className="block truncate">
+          {website.name}
+        </span>
+        <span
+          className={`absolute left-0 top-0 z-10 block max-h-0 origin-top scale-y-0 select-text overflow-hidden whitespace-normal break-words bg-white text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
+            isSelectingForDelete ? "group-hover/name:bg-red-100" : ""
+          }`}
+          style={{
+            width:
+              hoverLayout.nameOverflows || hoverLayout.nameColumnWidth === 0
+                ? "100%"
+                : hoverLayout.nameColumnWidth,
+          }}
+        >
+          {website.name}
+        </span>
+      </div>
+      <button
+        ref={linkColumnRef}
+        className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
+          isSelectingForDelete
+            ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
+            : "cursor-pointer text-blue-700 focus-visible:outline-blue-300"
+        }`}
+        type="button"
+        onClick={(event) => {
+          if (isSelectingForDelete) {
+            event.preventDefault();
+            onDelete();
+            return;
+          }
+
+          openWebsite(website.url);
+        }}
+        title={website.url}
+      >
+        <span ref={linkTextRef} className="block truncate">
+          {displayUrl}
+        </span>
+        <span
+          className={`pointer-events-none absolute right-0 top-0 z-10 block max-h-0 origin-top scale-y-0 overflow-hidden whitespace-normal break-words bg-white text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
+            isSelectingForDelete ? "group-hover/link:bg-red-100" : ""
+          }`}
+          style={{
+            width:
+              hoverLayout.linkOverflows || hoverLayout.linkColumnWidth === 0
+                ? "100%"
+                : hoverLayout.linkColumnWidth,
+          }}
+        >
+          {displayUrl}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function WebsitePreview({
   website,
   refreshKey,
@@ -367,68 +525,13 @@ function App() {
             className="grid grid-cols-1 gap-y-3 border-r border-slate-200 px-5 py-4"
             key={website.url}
           >
-            <div className="relative grid min-h-5 grid-cols-[minmax(0,2fr)_minmax(4.5rem,1fr)] items-start gap-x-4">
-              <div
-                className={`group/name relative min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
-                  isSelectingForDelete
-                    ? "cursor-pointer bg-red-50 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
-                    : "cursor-text focus-visible:outline-blue-300"
-                }`}
-                role={isSelectingForDelete ? "button" : undefined}
-                tabIndex={isSelectingForDelete ? 0 : undefined}
-                onClick={() => {
-                  if (isSelectingForDelete) {
-                    void deleteWebsite(website).catch(() => undefined);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (!isSelectingForDelete) {
-                    return;
-                  }
-
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    void deleteWebsite(website).catch(() => undefined);
-                  }
-                }}
-              >
-                <span className="block truncate">{website.name}</span>
-                <span
-                  className={`absolute left-0 top-0 z-10 block max-h-0 w-full origin-top scale-y-0 select-text overflow-hidden whitespace-normal break-words bg-white text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
-                    isSelectingForDelete ? "group-hover/name:bg-red-100" : ""
-                  }`}
-                >
-                  {website.name}
-                </span>
-              </div>
-              <button
-                className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
-                  isSelectingForDelete
-                    ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
-                    : "cursor-pointer text-blue-700 focus-visible:outline-blue-300"
-                }`}
-                type="button"
-                onClick={(event) => {
-                  if (isSelectingForDelete) {
-                    event.preventDefault();
-                    void deleteWebsite(website).catch(() => undefined);
-                    return;
-                  }
-
-                  openWebsite(website.url);
-                }}
-                title={website.url}
-              >
-                <span className="block truncate">{getDisplayUrl(website.url)}</span>
-                <span
-                  className={`pointer-events-none absolute right-0 top-0 z-10 block max-h-0 w-full origin-top scale-y-0 overflow-hidden whitespace-normal break-words bg-white text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
-                    isSelectingForDelete ? "group-hover/link:bg-red-100" : ""
-                  }`}
-                >
-                  {getDisplayUrl(website.url)}
-                </span>
-              </button>
-            </div>
+            <WebsiteHeader
+              website={website}
+              isSelectingForDelete={isSelectingForDelete}
+              onDelete={() => {
+                void deleteWebsite(website).catch(() => undefined);
+              }}
+            />
             <button
               className="block aspect-video w-full cursor-pointer overflow-hidden border-0 bg-slate-100 p-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300"
               type="button"
