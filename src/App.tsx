@@ -1,7 +1,26 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  DEFAULT_KEYBINDINGS,
+  KEYBINDING_COMMAND_LABELS,
+  KEYBINDING_COMMANDS,
+  MAX_KEYBINDINGS_PER_COMMAND,
+  formatKeybindingLabel,
+  getKeybindingFromEvent,
+  normalizeKeybindings,
+  useWebsiteKeybindNavigation,
+  type KeybindingMap,
+  type KeyboardNavigationCommand,
+} from "./websiteKeybinds";
 
 type WebsiteRecord = {
   name: string;
@@ -12,6 +31,21 @@ type WebsiteRecord = {
 const PREVIEW_CACHE_DB_NAME = "agglomerator-preview-cache";
 const PREVIEW_CACHE_STORE_NAME = "previews";
 const PREVIEW_CACHE_VERSION = 1;
+const KEYBINDING_STORAGE_KEY = "agglomerator-keybindings";
+
+function loadStoredKeybindings() {
+  try {
+    const storedKeybindings = window.localStorage.getItem(KEYBINDING_STORAGE_KEY);
+
+    if (!storedKeybindings) {
+      return normalizeKeybindings(DEFAULT_KEYBINDINGS);
+    }
+
+    return normalizeKeybindings(JSON.parse(storedKeybindings));
+  } catch {
+    return normalizeKeybindings(DEFAULT_KEYBINDINGS);
+  }
+}
 
 function sortWebsitesByRecency(websites: WebsiteRecord[]) {
   return [...websites].sort(
@@ -161,13 +195,133 @@ function openWebsite(url: string) {
   void openUrl(getOpenableUrl(url)).catch(() => undefined);
 }
 
+function KeybindingSettings({
+  keybindings,
+  recordingBinding,
+  onCancelRecording,
+  onRemoveBinding,
+  onResetKeybindings,
+  onSetBinding,
+  onStartRecording,
+}: {
+  keybindings: KeybindingMap;
+  recordingBinding: { command: KeyboardNavigationCommand; slot: number } | null;
+  onCancelRecording: () => void;
+  onRemoveBinding: (command: KeyboardNavigationCommand, slot: number) => void;
+  onResetKeybindings: () => void;
+  onSetBinding: (
+    command: KeyboardNavigationCommand,
+    slot: number,
+    keybinding: string,
+  ) => void;
+  onStartRecording: (command: KeyboardNavigationCommand, slot: number) => void;
+}) {
+  return (
+    <section className="border-y border-slate-200 px-5 py-3 text-sm [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="font-medium text-slate-900">Keybindings</div>
+        <button
+          className="border-0 bg-transparent p-0 text-red-700 underline hover:bg-red-500 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-300"
+          type="button"
+          onClick={onResetKeybindings}
+        >
+          Reset
+        </button>
+      </div>
+      <div className="grid gap-2">
+        {KEYBINDING_COMMANDS.map((command) => (
+          <div
+            className="grid grid-cols-[minmax(7rem,10rem)_1fr] items-center gap-3"
+            key={command}
+          >
+            <div className="text-slate-700">
+              {KEYBINDING_COMMAND_LABELS[command]}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {Array.from({ length: MAX_KEYBINDINGS_PER_COMMAND }).map(
+                (_, slot) => {
+                  const keybinding = keybindings[command][slot];
+                  const isRecording =
+                    recordingBinding?.command === command &&
+                    recordingBinding.slot === slot;
+
+                  return (
+                    <span className="inline-flex" key={slot}>
+                      <button
+                        autoFocus={isRecording}
+                        className={`min-h-7 min-w-12 border border-slate-300 px-2 py-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300 ${
+                          isRecording
+                            ? "bg-sky-700 text-white"
+                            : "bg-white text-slate-950 hover:bg-slate-100"
+                        }`}
+                        type="button"
+                        onClick={() => onStartRecording(command, slot)}
+                        onKeyDown={(event) => {
+                          if (!isRecording) {
+                            return;
+                          }
+
+                          event.preventDefault();
+                          event.stopPropagation();
+
+                          if (event.key === "Escape") {
+                            onCancelRecording();
+                            return;
+                          }
+
+                          if (
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.altKey ||
+                            ["Alt", "Control", "Meta", "Shift"].includes(event.key)
+                          ) {
+                            return;
+                          }
+
+                          onSetBinding(
+                            command,
+                            slot,
+                            getKeybindingFromEvent(event),
+                          );
+                        }}
+                      >
+                        {isRecording
+                          ? "..."
+                          : keybinding
+                            ? formatKeybindingLabel(keybinding)
+                            : "+"}
+                      </button>
+                      {keybinding ? (
+                        <button
+                          className="min-h-7 border-y border-r border-slate-300 bg-white px-1.5 text-slate-500 hover:bg-red-500 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300"
+                          type="button"
+                          onClick={() => onRemoveBinding(command, slot)}
+                          aria-label={`Remove ${KEYBINDING_COMMAND_LABELS[command]} binding ${formatKeybindingLabel(keybinding)}`}
+                        >
+                          x
+                        </button>
+                      ) : null}
+                    </span>
+                  );
+                },
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function WebsiteHeader({
   website,
   isSelectingForDelete,
+  isKeyboardHighlighted,
   onDelete,
 }: {
   website: WebsiteRecord;
   isSelectingForDelete: boolean;
+  isKeyboardHighlighted: boolean;
   onDelete: () => void;
 }) {
   const nameColumnRef = useRef<HTMLDivElement>(null);
@@ -284,7 +438,9 @@ function WebsiteHeader({
         className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
           isSelectingForDelete
             ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
-            : "cursor-pointer text-blue-700 focus-visible:outline-blue-300"
+            : isKeyboardHighlighted
+              ? "cursor-pointer bg-sky-700 text-white underline focus-visible:outline-blue-300"
+              : "cursor-pointer bg-white text-blue-700 focus-visible:outline-blue-300"
         }`}
         type="button"
         onClick={(event) => {
@@ -302,8 +458,12 @@ function WebsiteHeader({
           {displayUrl}
         </span>
         <span
-          className={`pointer-events-none absolute right-0 top-0 z-10 block max-h-0 origin-top scale-y-0 overflow-hidden whitespace-normal break-words bg-white text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
+          className={`pointer-events-none absolute right-0 top-0 z-10 block origin-top overflow-hidden whitespace-normal break-words text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
             isSelectingForDelete ? "group-hover/link:bg-red-100" : ""
+          } ${
+            isKeyboardHighlighted
+              ? "max-h-40 scale-y-100 bg-sky-700 text-white"
+              : "max-h-0 scale-y-0 bg-white text-blue-700"
           }`}
           style={{
             width:
@@ -426,16 +586,31 @@ function WebsitePreview({
 }
 
 function App() {
+  const isSettingsWindow = window.location.hash === "#settings";
   const [websites, setWebsites] = useState<WebsiteRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectingForDelete, setIsSelectingForDelete] = useState(false);
+  const [keybindings, setKeybindings] = useState<KeybindingMap>(
+    loadStoredKeybindings,
+  );
+  const [recordingBinding, setRecordingBinding] = useState<{
+    command: KeyboardNavigationCommand;
+    slot: number;
+  } | null>(null);
   const [previewRefreshKeys, setPreviewRefreshKeys] = useState<
     Record<string, number>
   >({});
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const websiteGridRef = useRef<HTMLUListElement>(null);
+  const [websiteGridColumnCount, setWebsiteGridColumnCount] = useState(1);
   const previewClickTimeoutRef = useRef<number | undefined>(undefined);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
   useEffect(() => {
+    if (isSettingsWindow) {
+      return;
+    }
+
     let isMounted = true;
 
     async function loadWebsites() {
@@ -456,6 +631,71 @@ function App() {
       isMounted = false;
       window.clearInterval(refreshInterval);
     };
+  }, [isSettingsWindow]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        KEYBINDING_STORAGE_KEY,
+        JSON.stringify(keybindings),
+      );
+    } catch {
+      // Keep the in-memory settings even if persistence is unavailable.
+    }
+  }, [keybindings]);
+
+  useEffect(() => {
+    function syncStoredKeybindings(event: StorageEvent) {
+      if (event.key !== KEYBINDING_STORAGE_KEY || !event.newValue) {
+        return;
+      }
+
+      try {
+        setKeybindings(normalizeKeybindings(JSON.parse(event.newValue)));
+      } catch {
+        setKeybindings(normalizeKeybindings(DEFAULT_KEYBINDINGS));
+      }
+    }
+
+    window.addEventListener("storage", syncStoredKeybindings);
+
+    return () => {
+      window.removeEventListener("storage", syncStoredKeybindings);
+    };
+  }, []);
+
+  useEffect(() => {
+    function measureGridColumns() {
+      const websiteGrid = websiteGridRef.current;
+
+      if (!websiteGrid) {
+        return;
+      }
+
+      const columnCount = getComputedStyle(websiteGrid)
+        .gridTemplateColumns.split(" ")
+        .filter(Boolean).length;
+
+      setWebsiteGridColumnCount(Math.max(1, columnCount));
+    }
+
+    const animationFrame = window.requestAnimationFrame(measureGridColumns);
+    window.addEventListener("resize", measureGridColumns);
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureGridColumns);
+
+    if (resizeObserver && websiteGridRef.current) {
+      resizeObserver.observe(websiteGridRef.current);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", measureGridColumns);
+      resizeObserver?.disconnect();
+    };
   }, []);
 
   const filteredWebsites = useMemo(() => {
@@ -469,6 +709,85 @@ function App() {
       return searchableText.includes(normalizedSearchQuery);
     });
   }, [normalizedSearchQuery, websites]);
+
+  const openWebsiteAtIndex = useCallback(
+    (websiteIndex: number) => {
+      const website = filteredWebsites[websiteIndex];
+
+      if (website) {
+        openWebsite(website.url);
+      }
+    },
+    [filteredWebsites],
+  );
+
+  const focusSearchInput = useCallback(() => {
+    searchInputRef.current?.focus();
+  }, []);
+
+  const resetKeybindings = useCallback(() => {
+    setKeybindings(normalizeKeybindings(DEFAULT_KEYBINDINGS));
+    setRecordingBinding(null);
+  }, []);
+
+  const removeKeybinding = useCallback(
+    (command: KeyboardNavigationCommand, slot: number) => {
+      setKeybindings((currentKeybindings) => {
+        const nextKeybindings = normalizeKeybindings(currentKeybindings);
+
+        nextKeybindings[command] = nextKeybindings[command].filter(
+          (_, bindingIndex) => bindingIndex !== slot,
+        );
+
+        return nextKeybindings;
+      });
+      setRecordingBinding(null);
+    },
+    [],
+  );
+
+  const setKeybinding = useCallback(
+    (command: KeyboardNavigationCommand, slot: number, keybinding: string) => {
+      setKeybindings((currentKeybindings) => {
+        const nextKeybindings = normalizeKeybindings(currentKeybindings);
+
+        KEYBINDING_COMMANDS.forEach((currentCommand) => {
+          nextKeybindings[currentCommand] = nextKeybindings[
+            currentCommand
+          ].filter((currentKeybinding) => currentKeybinding !== keybinding);
+        });
+
+        const commandKeybindings = [...nextKeybindings[command]];
+
+        commandKeybindings[slot] = keybinding;
+        nextKeybindings[command] = commandKeybindings
+          .filter(Boolean)
+          .slice(0, MAX_KEYBINDINGS_PER_COMMAND);
+
+        return nextKeybindings;
+      });
+      setRecordingBinding(null);
+    },
+    [],
+  );
+
+  const {
+    activeIndex: keyboardNavigationIndex,
+    isKeyboardMode,
+    rememberHoveredIndex,
+    startKeyboardModeAtIndex,
+    stopKeyboardMode,
+  } = useWebsiteKeybindNavigation({
+    itemCount: filteredWebsites.length,
+    columnCount: websiteGridColumnCount,
+    isEnabled: !isSettingsWindow,
+    isDeleteMode: isSelectingForDelete,
+    keybindings,
+    onCancelDeleteMode: () => setIsSelectingForDelete(false),
+    onEnterDeleteMode: () => setIsSelectingForDelete(true),
+    onMoveAboveFirstRow: focusSearchInput,
+    onOpen: openWebsiteAtIndex,
+  });
 
   async function deleteWebsite(website: WebsiteRecord) {
     const updatedWebsites = await invoke<WebsiteRecord[]>("delete_website", {
@@ -495,8 +814,29 @@ function App() {
     });
   }
 
+  if (isSettingsWindow) {
+    return (
+      <main className="min-h-screen bg-white text-slate-950">
+        <KeybindingSettings
+          keybindings={keybindings}
+          recordingBinding={recordingBinding}
+          onCancelRecording={() => setRecordingBinding(null)}
+          onRemoveBinding={removeKeybinding}
+          onResetKeybindings={resetKeybindings}
+          onSetBinding={setKeybinding}
+          onStartRecording={(command, slot) => {
+            setRecordingBinding({ command, slot });
+          }}
+        />
+      </main>
+    );
+  }
+
   return (
-    <main className="min-h-screen select-none bg-white text-slate-950">
+    <main
+      className="min-h-screen select-none bg-white text-slate-950"
+      onPointerMove={stopKeyboardMode}
+    >
       <div
         className="h-6 select-none bg-white"
         data-tauri-drag-region
@@ -504,10 +844,23 @@ function App() {
       />
       <div className="flex items-center gap-4 px-5 py-1.5">
         <input
+          ref={searchInputRef}
           className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-slate-950 outline-none [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] placeholder:text-slate-400"
           type="search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (
+              !["ArrowDown", "Enter"].includes(event.key) ||
+              filteredWebsites.length === 0
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            startKeyboardModeAtIndex(0);
+            event.currentTarget.blur();
+          }}
           placeholder="Search"
           aria-label="Search websites by name or link"
         />
@@ -519,15 +872,26 @@ function App() {
           {isSelectingForDelete ? "Cancel" : "Delete"}
         </button>
       </div>
-      <ul className="grid w-full grid-cols-[repeat(auto-fill,minmax(15rem,22rem))]">
-        {filteredWebsites.map((website) => (
+      <ul
+        ref={websiteGridRef}
+        className="grid w-full grid-cols-[repeat(auto-fill,minmax(15rem,22rem))]"
+      >
+        {filteredWebsites.map((website, websiteIndex) => (
           <li
-            className="grid grid-cols-1 gap-y-3 border-r border-slate-200 px-5 py-4"
+            className={`grid grid-cols-1 gap-y-3 px-5 py-4 ${
+              (websiteIndex + 1) % websiteGridColumnCount === 0
+                ? ""
+                : "border-r border-slate-200"
+            }`}
             key={website.url}
+            onPointerEnter={() => rememberHoveredIndex(websiteIndex)}
           >
             <WebsiteHeader
               website={website}
               isSelectingForDelete={isSelectingForDelete}
+              isKeyboardHighlighted={
+                isKeyboardMode && keyboardNavigationIndex === websiteIndex
+              }
               onDelete={() => {
                 void deleteWebsite(website).catch(() => undefined);
               }}

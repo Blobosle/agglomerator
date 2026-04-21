@@ -8,11 +8,15 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{ActivationPolicy, Manager, RunEvent, State, WindowEvent};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    ActivationPolicy, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 
 const EXTENSION_SERVER_ADDR: &str = "127.0.0.1:39287";
 const STORAGE_FILE_NAME: &str = "websites.json";
 const WINDOW_PREFERENCES_FILE_NAME: &str = "window-preferences.json";
+const SETTINGS_MENU_ID: &str = "open_settings";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +169,58 @@ fn save_window_preferences(window: &tauri::Window) {
     if let Ok(file_contents) = serde_json::to_string_pretty(&preferences) {
         let _ = fs::write(&preferences_state.path, format!("{file_contents}\n"));
     }
+}
+
+fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let settings_item = MenuItem::with_id(
+        app,
+        SETTINGS_MENU_ID,
+        "Settings...",
+        true,
+        Some("CmdOrCtrl+,"),
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit_item = PredefinedMenuItem::quit(app, None)?;
+    let app_submenu = Submenu::with_items(
+        app,
+        "Agglomerator",
+        true,
+        &[&settings_item, &separator, &quit_item],
+    )?;
+    let menu = Menu::with_items(app, &[&app_submenu])?;
+
+    app.set_menu(menu)?;
+    app.on_menu_event(|app_handle, event| {
+        if event.id() == SETTINGS_MENU_ID {
+            open_settings_window(app_handle);
+        }
+    });
+
+    Ok(())
+}
+
+fn open_settings_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let Ok(window) = WebviewWindowBuilder::new(
+        app,
+        "settings",
+        WebviewUrl::App("index.html#settings".into()),
+    )
+    .inner_size(520.0, 440.0)
+    .min_inner_size(440.0, 360.0)
+    .resizable(true)
+    .focused(true)
+    .build()
+    else {
+        return;
+    };
+
+    let _ = window.set_title("Settings");
 }
 
 fn read_websites(path: &PathBuf, lock: &Arc<Mutex<()>>) -> Result<Vec<WebsiteRecord>, String> {
@@ -343,6 +399,7 @@ pub fn run() {
         .setup(|app| {
             app.set_dock_visibility(true);
             app.set_activation_policy(ActivationPolicy::Regular);
+            configure_menu(app)?;
 
             let storage_path = initialize_storage(app)?;
             let storage_lock = Arc::new(Mutex::new(()));
@@ -365,12 +422,18 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             WindowEvent::CloseRequested { api, .. } => {
-                save_window_preferences(window);
                 api.prevent_close();
+
+                if window.label() == "main" {
+                    save_window_preferences(window);
+                }
+
                 let _ = window.hide();
             }
             WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
-                save_window_preferences(window);
+                if window.label() == "main" {
+                    save_window_preferences(window);
+                }
             }
             _ => {}
         })
