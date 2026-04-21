@@ -368,28 +368,39 @@ function App() {
             key={website.url}
           >
             <div className="relative grid min-h-5 grid-cols-[minmax(0,2fr)_minmax(4.5rem,1fr)] items-start gap-x-4">
-              <button
-                className={`group/name min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
+              <div
+                className={`group/name relative min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
                   isSelectingForDelete
                     ? "cursor-pointer bg-red-50 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
-                    : "cursor-default focus-visible:outline-blue-300"
+                    : "cursor-text focus-visible:outline-blue-300"
                 }`}
-                type="button"
+                role={isSelectingForDelete ? "button" : undefined}
+                tabIndex={isSelectingForDelete ? 0 : undefined}
                 onClick={() => {
                   if (isSelectingForDelete) {
+                    void deleteWebsite(website).catch(() => undefined);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (!isSelectingForDelete) {
+                    return;
+                  }
+
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
                     void deleteWebsite(website).catch(() => undefined);
                   }
                 }}
               >
                 <span className="block truncate">{website.name}</span>
                 <span
-                  className={`pointer-events-none absolute left-0 top-0 z-10 block max-h-0 w-full origin-top scale-y-0 overflow-hidden whitespace-normal break-words bg-white text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
+                  className={`absolute left-0 top-0 z-10 block max-h-0 w-full origin-top scale-y-0 select-text overflow-hidden whitespace-normal break-words bg-white text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
                     isSelectingForDelete ? "group-hover/name:bg-red-100" : ""
                   }`}
                 >
                   {website.name}
                 </span>
-              </button>
+              </div>
               <button
                 className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
                   isSelectingForDelete
