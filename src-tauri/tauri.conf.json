@@ -14,7 +14,10 @@
       {
         "title": "agglomerator",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "minWidth": 560,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

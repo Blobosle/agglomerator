@@ -1,3 +1,6 @@
+import type { PointerEvent } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
 type WebsiteRecord = {
   name: string;
   url: string;
@@ -22,9 +25,22 @@ const websites: WebsiteRecord[] = [
   },
 ];
 
+function startWindowDrag(event: PointerEvent<HTMLDivElement>) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  void getCurrentWindow().startDragging().catch(() => undefined);
+}
+
 function App() {
   return (
     <main className="min-h-screen bg-white text-slate-950">
+      <div
+        className="h-9 select-none border-b border-slate-200 bg-white"
+        data-tauri-drag-region
+        onPointerDown={startWindowDrag}
+      />
       <ul className="w-full divide-y divide-slate-200">
         {websites.map((website) => (
           <li
