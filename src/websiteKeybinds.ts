@@ -16,6 +16,11 @@ type WebsiteMovementCommand = Exclude<
   "open" | "enterDeleteMode" | "cancelDeleteMode"
 >;
 
+type DirectionalMovementCommand = Exclude<
+  WebsiteMovementCommand,
+  "rowEnd" | "rowStart"
+>;
+
 export type KeybindingMap = Record<KeyboardNavigationCommand, string[]>;
 
 type UseWebsiteKeybindNavigationOptions = {
@@ -118,6 +123,17 @@ function isTextEditingTarget(target: EventTarget | null) {
 
   return Boolean(
     target.closest("input, textarea, select, [contenteditable]"),
+  );
+}
+
+function isDirectionalMovementCommand(
+  command: WebsiteMovementCommand,
+): command is DirectionalMovementCommand {
+  return (
+    command === "next" ||
+    command === "previous" ||
+    command === "rowUp" ||
+    command === "rowDown"
   );
 }
 
@@ -250,6 +266,22 @@ export function useWebsiteKeybindNavigation({
       }
 
       event.preventDefault();
+
+      if (!isKeyboardMode && isDirectionalMovementCommand(command)) {
+        setActiveIndex((currentIndex) => {
+          if (
+            currentIndex === null ||
+            currentIndex < 0 ||
+            currentIndex >= itemCount
+          ) {
+            return 0;
+          }
+
+          return currentIndex;
+        });
+        setIsKeyboardMode(true);
+        return;
+      }
 
       if (
         command === "rowUp" &&
