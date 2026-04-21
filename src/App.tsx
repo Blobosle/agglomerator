@@ -177,7 +177,7 @@ function App() {
               className={`min-w-0 truncate border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
                 isSelectingForDelete
                   ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
-                  : "text-blue-700 focus-visible:outline-blue-300"
+                  : "cursor-pointer text-blue-700 focus-visible:outline-blue-300"
               }`}
               type="button"
               onClick={(event) => {
@@ -194,7 +194,7 @@ function App() {
               {getDisplayUrl(website.url)}
             </button>
             <button
-              className="col-span-2 block aspect-video w-full overflow-hidden border-0 bg-slate-100 p-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300"
+              className="col-span-2 block aspect-video w-full cursor-pointer overflow-hidden border-0 bg-slate-100 p-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300"
               type="button"
               onClick={(event) => {
                 if (isSelectingForDelete) {

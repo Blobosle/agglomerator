@@ -4,8 +4,15 @@
   "version": "0.1.0",
   "description": "Add the current tab to Agglomerator.",
   "permissions": ["activeTab", "tabs", "http://127.0.0.1:39287/*"],
+  "icons": {
+    "32": "icons/32x32.png",
+    "128": "icons/128x128.png"
+  },
   "browser_action": {
     "default_title": "Add to Agglomerator",
+    "default_icon": {
+      "32": "icons/32x32.png"
+    },
     "default_popup": "popup.html"
   }
 }
