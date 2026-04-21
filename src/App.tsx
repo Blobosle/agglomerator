@@ -273,7 +273,6 @@ function App() {
     });
 
     setWebsites(sortWebsitesByRecency(updatedWebsites));
-    setIsSelectingForDelete(false);
   }
 
   function getPreviewCacheKey(website: WebsiteRecord) {
@@ -316,7 +315,7 @@ function App() {
           {isSelectingForDelete ? "Cancel" : "Delete"}
         </button>
       </div>
-      <ul className="grid w-full grid-cols-[repeat(auto-fit,minmax(15rem,1fr))]">
+      <ul className="grid w-full grid-cols-[repeat(auto-fill,minmax(15rem,22rem))]">
         {filteredWebsites.map((website) => (
           <li
             className="grid grid-cols-1 gap-y-3 border-r border-slate-200 px-5 py-4"
