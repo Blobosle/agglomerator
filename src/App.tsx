@@ -1,49 +1,50 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+type WebsiteRecord = {
+  name: string;
+  url: string;
+};
+
+const websites: WebsiteRecord[] = [
+  {
+    name: "OpenAI",
+    url: "https://openai.com",
+  },
+  {
+    name: "Tauri",
+    url: "https://tauri.app",
+  },
+  {
+    name: "React",
+    url: "https://react.dev",
+  },
+  {
+    name: "Vite",
+    url: "https://vite.dev",
+  },
+];
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+    <main className="min-h-screen bg-white text-slate-950">
+      <ul className="w-full divide-y divide-slate-200">
+        {websites.map((website) => (
+          <li
+            className="flex min-h-14 items-center justify-between gap-6 px-5 py-4"
+            key={website.url}
+          >
+            <span className="min-w-0 font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
+              {website.name}
+            </span>
+            <a
+              className="min-w-0 break-words text-right text-blue-700 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300"
+              href={website.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {website.url.replace("https://", "")}
+            </a>
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }
