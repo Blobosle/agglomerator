@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Agglomerator</title>
+  </head>
+  <body
+    class="m-0 min-w-64 bg-white p-2.5 font-mono text-slate-950"
+  >
+    <form id="add-form" class="flex flex-col gap-1.5">
+      <textarea
+        id="name-input"
+        class="h-20 w-full resize-none border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-950 outline-none placeholder:text-slate-400"
+        autocomplete="off"
+        placeholder="Name"
+        aria-label="Website name"
+      ></textarea>
+      <button
+        class="self-center border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
+        type="submit"
+      >
+        Add
+      </button>
+    </form>
+    <p
+      id="status"
+      class="m-0 mt-1 min-h-4 text-xs text-slate-500"
+      role="status"
+      aria-live="polite"
+    ></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Agglomerator",
+  "version": "0.1.0",
+  "description": "Add the current tab to Agglomerator.",
+  "permissions": ["activeTab", "tabs", "http://127.0.0.1:39287/*"],
+  "browser_action": {
+    "default_title": "Add to Agglomerator",
+    "default_popup": "popup.html"
+  }
+}
