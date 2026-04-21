@@ -17,19 +17,22 @@
         placeholder="Name"
         aria-label="Website name"
       ></textarea>
-      <button
-        class="self-center border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
-        type="submit"
-      >
-        Add
-      </button>
+      <div class="grid grid-cols-3 items-center">
+        <span aria-hidden="true"></span>
+        <button
+          class="justify-self-center border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
+          type="submit"
+        >
+          Add
+        </button>
+        <p
+          id="status"
+          class="m-0 justify-self-end text-xs text-slate-500"
+          role="status"
+          aria-live="polite"
+        ></p>
+      </div>
     </form>
-    <p
-      id="status"
-      class="m-0 mt-1 min-h-4 text-xs text-slate-500"
-      role="status"
-      aria-live="polite"
-    ></p>
     <script src="popup.js"></script>
   </body>
 </html>

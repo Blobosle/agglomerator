@@ -34,7 +34,7 @@ async function initializePopup() {
   const tab = await getCurrentTab();
 
   if (!tab?.url) {
-    setStatus("No active tab URL.");
+    setStatus("No URL");
     button.disabled = true;
     return;
   }
@@ -51,12 +51,12 @@ form.addEventListener("submit", async (event) => {
   const name = nameInput.value.trim();
 
   if (!name || !currentTabUrl) {
-    setStatus("Name required.");
+    setStatus("Name?");
     return;
   }
 
   button.disabled = true;
-  setStatus("Adding...");
+  setStatus("...");
 
   try {
     const response = await fetch(BRIDGE_URL, {
@@ -75,15 +75,15 @@ form.addEventListener("submit", async (event) => {
       throw new Error("Agglomerator rejected the website.");
     }
 
-    setStatus("Added.");
+    setStatus("Added");
   } catch {
-    setStatus("Open Agglomerator and try again.");
+    setStatus("Closed");
   } finally {
     button.disabled = false;
   }
 });
 
 void initializePopup().catch(() => {
-  setStatus("Unable to read current tab.");
+  setStatus("No tab");
   button.disabled = true;
 });
