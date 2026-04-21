@@ -9,6 +9,10 @@ type WebsiteRecord = {
   addedAt: number;
 };
 
+const PREVIEW_CACHE_DB_NAME = "agglomerator-preview-cache";
+const PREVIEW_CACHE_STORE_NAME = "previews";
+const PREVIEW_CACHE_VERSION = 1;
+
 function sortWebsitesByRecency(websites: WebsiteRecord[]) {
   return [...websites].sort(
     (firstWebsite, secondWebsite) =>
@@ -27,19 +31,64 @@ function getOpenableUrl(url: string) {
 }
 
 function getPreviewUrl(url: string) {
-  return `https://s.wordpress.com/mshots/v1/${encodeURIComponent(getOpenableUrl(url))}?w=640`;
+  return `https://image.thum.io/get/width/640/crop/360/noanimate/${encodeURI(getOpenableUrl(url))}`;
+}
+
+function getPreviewAttemptUrl(url: string, attempt: number) {
+  return `${getPreviewUrl(url)}?refresh=${attempt}`;
+}
+
+function openPreviewCache() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(
+      PREVIEW_CACHE_DB_NAME,
+      PREVIEW_CACHE_VERSION,
+    );
+
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(PREVIEW_CACHE_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function readCachedPreview(url: string) {
+  const database = await openPreviewCache();
+
+  return new Promise<Blob | null>((resolve, reject) => {
+    const transaction = database.transaction(PREVIEW_CACHE_STORE_NAME, "readonly");
+    const request = transaction.objectStore(PREVIEW_CACHE_STORE_NAME).get(url);
+
+    request.onsuccess = () => resolve((request.result as Blob | undefined) ?? null);
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => database.close();
+  });
+}
+
+async function writeCachedPreview(url: string, previewBlob: Blob) {
+  const database = await openPreviewCache();
+
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(PREVIEW_CACHE_STORE_NAME, "readwrite");
+    const request = transaction
+      .objectStore(PREVIEW_CACHE_STORE_NAME)
+      .put(previewBlob, url);
+
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error);
+    };
+  });
 }
 
 function getDisplayUrl(url: string) {
   return url.replace(/^https?:\/\//, "");
-}
-
-function getHostName(url: string) {
-  try {
-    return new URL(getOpenableUrl(url)).hostname.replace(/^www\./, "");
-  } catch {
-    return getDisplayUrl(url);
-  }
 }
 
 function startWindowDrag(event: PointerEvent<HTMLDivElement>) {
@@ -55,25 +104,95 @@ function openWebsite(url: string) {
 }
 
 function WebsitePreview({ website }: { website: WebsiteRecord }) {
-  const [hasPreviewError, setHasPreviewError] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
-  if (hasPreviewError) {
-    return (
-      <span className="flex h-full w-full items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
-        {getHostName(website.url)}
-      </span>
-    );
-  }
+  useEffect(() => {
+    let isMounted = true;
+    let retryTimeout: number | undefined;
+    let objectUrl: string | undefined;
+    let attempt = 0;
+
+    async function setPreviewBlob(previewBlob: Blob) {
+      objectUrl = URL.createObjectURL(previewBlob);
+
+      if (isMounted) {
+        setPreviewSrc(objectUrl);
+      }
+    }
+
+    async function loadPreview() {
+      const candidateSrc = getPreviewAttemptUrl(website.url, attempt);
+
+      try {
+        const response = await fetch(candidateSrc, {
+          cache: "no-store",
+          referrerPolicy: "no-referrer",
+        });
+
+        if (!response.ok) {
+          throw new Error("Preview was not ready");
+        }
+
+        const previewBlob = await response.blob();
+
+        await writeCachedPreview(website.url, previewBlob).catch(() => undefined);
+        await setPreviewBlob(previewBlob);
+      } catch {
+        const previewImage = new Image();
+
+        previewImage.referrerPolicy = "no-referrer";
+        previewImage.onload = () => {
+          if (isMounted) {
+            setPreviewSrc(candidateSrc);
+          }
+        };
+        previewImage.onerror = () => {
+          attempt += 1;
+          retryTimeout = window.setTimeout(loadPreview, 3000);
+        };
+        previewImage.src = candidateSrc;
+      }
+    }
+
+    async function initializePreview() {
+      setPreviewSrc(null);
+
+      const cachedPreview = await readCachedPreview(website.url).catch(() => null);
+
+      if (cachedPreview) {
+        await setPreviewBlob(cachedPreview);
+        return;
+      }
+
+      await loadPreview();
+    }
+
+    void initializePreview().catch(() => {
+      if (isMounted) {
+        retryTimeout = window.setTimeout(loadPreview, 3000);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      window.clearTimeout(retryTimeout);
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [website.url]);
 
   return (
-    <img
-      className="h-full w-full object-cover"
-      src={getPreviewUrl(website.url)}
-      alt=""
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setHasPreviewError(true)}
-    />
+    previewSrc && (
+      <img
+        className="h-full w-full object-cover"
+        src={previewSrc}
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
+    )
   );
 }
 
