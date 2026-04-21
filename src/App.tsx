@@ -295,13 +295,13 @@ function App() {
   return (
     <main className="min-h-screen bg-white text-slate-950">
       <div
-        className="h-9 select-none bg-white"
+        className="h-6 select-none bg-white"
         data-tauri-drag-region
         onPointerDown={startWindowDrag}
       />
-      <div className="flex items-center gap-4 px-5 py-3">
+      <div className="flex items-center gap-4 px-5 py-1.5">
         <input
-          className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-slate-950 outline-none [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] placeholder:text-slate-400"
+          className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-slate-950 outline-none [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] placeholder:text-slate-400"
           type="search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.currentTarget.value)}
