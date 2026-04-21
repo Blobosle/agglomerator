@@ -8,10 +8,11 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{ActivationPolicy, Manager, State, WindowEvent};
+use tauri::{ActivationPolicy, Manager, RunEvent, State, WindowEvent};
 
 const EXTENSION_SERVER_ADDR: &str = "127.0.0.1:39287";
 const STORAGE_FILE_NAME: &str = "websites.json";
+const WINDOW_PREFERENCES_FILE_NAME: &str = "window-preferences.json";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,20 @@ struct AddWebsiteRequest {
 }
 
 struct StorageState {
+    path: PathBuf,
+    lock: Arc<Mutex<()>>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowPreferences {
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+}
+
+struct WindowPreferencesState {
     path: PathBuf,
     lock: Arc<Mutex<()>>,
 }
@@ -99,6 +114,57 @@ fn initialize_storage(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::E
     }
 
     Ok(storage_path)
+}
+
+fn initialize_window_preferences(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let app_data_dir = app.path().app_data_dir()?;
+    fs::create_dir_all(&app_data_dir)?;
+
+    Ok(app_data_dir.join(WINDOW_PREFERENCES_FILE_NAME))
+}
+
+fn restore_window_preferences(app: &tauri::App, path: &PathBuf) {
+    let Ok(file_contents) = fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(preferences) = serde_json::from_str::<WindowPreferences>(&file_contents) else {
+        return;
+    };
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+        preferences.width,
+        preferences.height,
+    )));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        preferences.x,
+        preferences.y,
+    )));
+}
+
+fn save_window_preferences(window: &tauri::Window) {
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let preferences = WindowPreferences {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y,
+    };
+    let preferences_state = window.state::<WindowPreferencesState>();
+    let Ok(_guard) = preferences_state.lock.lock() else {
+        return;
+    };
+
+    if let Ok(file_contents) = serde_json::to_string_pretty(&preferences) {
+        let _ = fs::write(&preferences_state.path, format!("{file_contents}\n"));
+    }
 }
 
 fn read_websites(path: &PathBuf, lock: &Arc<Mutex<()>>) -> Result<Vec<WebsiteRecord>, String> {
@@ -275,31 +341,57 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.set_dock_visibility(false);
-            app.set_activation_policy(ActivationPolicy::Accessory);
+            app.set_dock_visibility(true);
+            app.set_activation_policy(ActivationPolicy::Regular);
 
             let storage_path = initialize_storage(app)?;
             let storage_lock = Arc::new(Mutex::new(()));
+            let window_preferences_path = initialize_window_preferences(app)?;
+            let window_preferences_lock = Arc::new(Mutex::new(()));
 
             app.manage(StorageState {
                 path: storage_path.clone(),
                 lock: Arc::clone(&storage_lock),
             });
+            app.manage(WindowPreferencesState {
+                path: window_preferences_path.clone(),
+                lock: Arc::clone(&window_preferences_lock),
+            });
+
+            restore_window_preferences(app, &window_preferences_path);
             start_extension_server(storage_path, storage_lock);
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                save_window_preferences(window);
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                save_window_preferences(window);
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             list_websites,
             add_website,
             delete_website
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

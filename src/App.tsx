@@ -256,9 +256,10 @@ function WebsitePreview({
   return (
     previewSrc && (
       <img
-        className="h-full w-full object-cover"
+        className="h-full w-full select-none object-cover"
         src={previewSrc}
         alt=""
+        draggable={false}
         loading="lazy"
         referrerPolicy="no-referrer"
       />
@@ -337,7 +338,7 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-slate-950">
+    <main className="min-h-screen select-none bg-white text-slate-950">
       <div
         className="h-6 select-none bg-white"
         data-tauri-drag-region
@@ -353,7 +354,7 @@ function App() {
           aria-label="Search websites by name or link"
         />
         <button
-          className="border-0 bg-transparent p-0 text-sm text-red-700 underline [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:bg-red-500 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-300"
+          className="select-text border-0 bg-transparent p-0 text-sm text-red-700 underline [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:bg-red-500 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-300"
           type="button"
           onClick={() => setIsSelectingForDelete((isSelecting) => !isSelecting)}
         >
@@ -368,7 +369,7 @@ function App() {
           >
             <div className="relative grid min-h-5 grid-cols-[minmax(0,2fr)_minmax(4.5rem,1fr)] items-start gap-x-4">
               <button
-                className={`group/name min-w-0 border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
+                className={`group/name min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
                   isSelectingForDelete
                     ? "cursor-pointer bg-red-50 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
                     : "cursor-default focus-visible:outline-blue-300"
@@ -390,7 +391,7 @@ function App() {
                 </span>
               </button>
               <button
-                className={`group/link min-w-0 border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
+                className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
                   isSelectingForDelete
                     ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
                     : "cursor-pointer text-blue-700 focus-visible:outline-blue-300"

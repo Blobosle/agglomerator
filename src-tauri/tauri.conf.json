@@ -13,9 +13,10 @@
     "windows": [
       {
         "title": "agglomerator",
-        "width": 800,
-        "height": 600,
+        "width": 1200,
+        "height": 820,
         "minWidth": 560,
+        "minHeight": 420,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
