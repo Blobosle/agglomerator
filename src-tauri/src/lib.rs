@@ -8,7 +8,7 @@ use std::{
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, State};
+use tauri::{ActivationPolicy, Manager, State, WindowEvent};
 
 const EXTENSION_SERVER_ADDR: &str = "127.0.0.1:39287";
 const STORAGE_FILE_NAME: &str = "websites.json";
@@ -275,6 +275,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            app.set_dock_visibility(false);
+            app.set_activation_policy(ActivationPolicy::Accessory);
+
             let storage_path = initialize_storage(app)?;
             let storage_lock = Arc::new(Mutex::new(()));
 
@@ -285,6 +288,12 @@ pub fn run() {
             start_extension_server(storage_path, storage_lock);
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             list_websites,
