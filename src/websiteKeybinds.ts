@@ -25,6 +25,7 @@ type UseWebsiteKeybindNavigationOptions = {
   isDeleteMode: boolean;
   keybindings: KeybindingMap;
   onCancelDeleteMode: () => void;
+  onDelete: (index: number) => void;
   onEnterDeleteMode: () => void;
   onMoveAboveFirstRow: () => void;
   onOpen: (index: number) => void;
@@ -182,6 +183,7 @@ export function useWebsiteKeybindNavigation({
   isDeleteMode,
   keybindings,
   onCancelDeleteMode,
+  onDelete,
   onEnterDeleteMode,
   onMoveAboveFirstRow,
   onOpen,
@@ -232,16 +234,16 @@ export function useWebsiteKeybindNavigation({
         return;
       }
 
-      if (isDeleteMode) {
-        return;
-      }
-
       const normalizedColumnCount = Math.max(1, columnCount);
 
       if (command === "open") {
         if (isKeyboardMode && activeIndex !== null) {
           event.preventDefault();
-          onOpen(activeIndex);
+          if (isDeleteMode) {
+            onDelete(activeIndex);
+          } else {
+            onOpen(activeIndex);
+          }
         }
 
         return;
@@ -284,6 +286,7 @@ export function useWebsiteKeybindNavigation({
     itemCount,
     keybindings,
     onCancelDeleteMode,
+    onDelete,
     onEnterDeleteMode,
     onMoveAboveFirstRow,
     onOpen,

@@ -395,7 +395,9 @@ function WebsiteHeader({
         ref={nameColumnRef}
         className={`group/name min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
           isSelectingForDelete
-            ? "cursor-pointer bg-red-50 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
+            ? isKeyboardHighlighted
+              ? "cursor-pointer bg-red-700 text-white focus-visible:outline-red-300"
+              : "cursor-pointer bg-white text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
             : "cursor-text focus-visible:outline-blue-300"
         }`}
         role={isSelectingForDelete ? "button" : undefined}
@@ -420,8 +422,12 @@ function WebsiteHeader({
           {website.name}
         </span>
         <span
-          className={`absolute left-0 top-0 z-10 block max-h-0 origin-top scale-y-0 select-text overflow-hidden whitespace-normal break-words bg-white text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
-            isSelectingForDelete ? "group-hover/name:bg-red-100" : ""
+          className={`absolute left-0 top-0 z-10 block max-h-0 origin-top scale-y-0 select-text overflow-hidden whitespace-normal break-words text-left transition-[max-height,transform] duration-300 ease-out group-hover/name:max-h-40 group-hover/name:scale-y-100 group-focus-visible/name:max-h-40 group-focus-visible/name:scale-y-100 ${
+            isSelectingForDelete
+              ? isKeyboardHighlighted
+                ? "bg-red-700 text-white"
+                : "bg-white text-red-700 group-hover/name:bg-red-100 group-hover/name:text-red-900"
+              : "bg-white text-slate-900"
           }`}
           style={{
             width:
@@ -437,7 +443,9 @@ function WebsiteHeader({
         ref={linkColumnRef}
         className={`group/link min-w-0 select-text border-0 bg-transparent p-0 text-right [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 ${
           isSelectingForDelete
-            ? "cursor-pointer bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
+            ? isKeyboardHighlighted
+              ? "cursor-pointer bg-red-700 text-white underline focus-visible:outline-red-300"
+              : "cursor-pointer bg-white text-red-700 hover:bg-red-100 hover:text-red-900 focus-visible:outline-red-300"
             : isKeyboardHighlighted
               ? "cursor-pointer bg-sky-700 text-white underline focus-visible:outline-blue-300"
               : "cursor-pointer bg-white text-blue-700 focus-visible:outline-blue-300"
@@ -459,11 +467,15 @@ function WebsiteHeader({
         </span>
         <span
           className={`pointer-events-none absolute right-0 top-0 z-10 block origin-top overflow-hidden whitespace-normal break-words text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
-            isSelectingForDelete ? "group-hover/link:bg-red-100" : ""
+            isKeyboardHighlighted ? "max-h-40 scale-y-100" : "max-h-0 scale-y-0"
           } ${
-            isKeyboardHighlighted
-              ? "max-h-40 scale-y-100 bg-sky-700 text-white"
-              : "max-h-0 scale-y-0 bg-white text-blue-700"
+            isSelectingForDelete
+              ? isKeyboardHighlighted
+                ? "bg-red-700 text-white"
+                : "bg-white text-red-700 group-hover/link:bg-red-100 group-hover/link:text-red-900"
+              : isKeyboardHighlighted
+                ? "bg-sky-700 text-white"
+                : "bg-white text-blue-700"
           }`}
           style={{
             width:
@@ -721,6 +733,17 @@ function App() {
     [filteredWebsites],
   );
 
+  const deleteWebsiteAtIndex = useCallback(
+    (websiteIndex: number) => {
+      const website = filteredWebsites[websiteIndex];
+
+      if (website) {
+        void deleteWebsite(website).catch(() => undefined);
+      }
+    },
+    [filteredWebsites],
+  );
+
   const focusSearchInput = useCallback(() => {
     searchInputRef.current?.focus();
   }, []);
@@ -784,6 +807,7 @@ function App() {
     isDeleteMode: isSelectingForDelete,
     keybindings,
     onCancelDeleteMode: () => setIsSelectingForDelete(false),
+    onDelete: deleteWebsiteAtIndex,
     onEnterDeleteMode: () => setIsSelectingForDelete(true),
     onMoveAboveFirstRow: focusSearchInput,
     onOpen: openWebsiteAtIndex,
