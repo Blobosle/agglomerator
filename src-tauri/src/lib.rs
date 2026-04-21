@@ -17,6 +17,7 @@ const EXTENSION_SERVER_ADDR: &str = "127.0.0.1:39287";
 const STORAGE_FILE_NAME: &str = "websites.json";
 const WINDOW_PREFERENCES_FILE_NAME: &str = "window-preferences.json";
 const SETTINGS_MENU_ID: &str = "open_settings";
+const CLOSE_WINDOW_MENU_ID: &str = "close_window";
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,13 +180,20 @@ fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         Some("CmdOrCtrl+,"),
     )?;
+    let close_window_item = MenuItem::with_id(
+        app,
+        CLOSE_WINDOW_MENU_ID,
+        "Close Window",
+        true,
+        Some("CmdOrCtrl+W"),
+    )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit_item = PredefinedMenuItem::quit(app, None)?;
     let app_submenu = Submenu::with_items(
         app,
         "Agglomerator",
         true,
-        &[&settings_item, &separator, &quit_item],
+        &[&settings_item, &close_window_item, &separator, &quit_item],
     )?;
     let menu = Menu::with_items(app, &[&app_submenu])?;
 
@@ -193,6 +201,8 @@ fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.on_menu_event(|app_handle, event| {
         if event.id() == SETTINGS_MENU_ID {
             open_settings_window(app_handle);
+        } else if event.id() == CLOSE_WINDOW_MENU_ID {
+            close_settings_window(app_handle);
         }
     });
 
@@ -215,12 +225,27 @@ fn open_settings_window(app: &tauri::AppHandle) {
     .min_inner_size(440.0, 360.0)
     .resizable(true)
     .focused(true)
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
     .build()
     else {
         return;
     };
 
     let _ = window.set_title("Settings");
+}
+
+fn close_settings_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("settings") else {
+        return;
+    };
+    let Ok(is_focused) = window.is_focused() else {
+        return;
+    };
+
+    if is_focused {
+        let _ = window.close();
+    }
 }
 
 fn read_websites(path: &PathBuf, lock: &Arc<Mutex<()>>) -> Result<Vec<WebsiteRecord>, String> {
@@ -422,13 +447,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-
                 if window.label() == "main" {
+                    api.prevent_close();
                     save_window_preferences(window);
+                    let _ = window.hide();
                 }
-
-                let _ = window.hide();
             }
             WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                 if window.label() == "main" {

@@ -217,7 +217,7 @@ function KeybindingSettings({
   onStartRecording: (command: KeyboardNavigationCommand, slot: number) => void;
 }) {
   return (
-    <section className="border-y border-slate-200 px-5 py-3 text-sm [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
+    <section className="px-5 py-3 text-sm [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
       <div className="mb-3 flex items-center justify-between gap-4">
         <div className="font-medium text-slate-900">Keybindings</div>
         <button
@@ -817,6 +817,11 @@ function App() {
   if (isSettingsWindow) {
     return (
       <main className="min-h-screen bg-white text-slate-950">
+        <div
+          className="h-8 bg-white"
+          data-tauri-drag-region
+          onPointerDown={startWindowDrag}
+        />
         <KeybindingSettings
           keybindings={keybindings}
           recordingBinding={recordingBinding}
