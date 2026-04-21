@@ -38,6 +38,45 @@ function getPreviewAttemptUrl(url: string, attempt: number) {
   return `${getPreviewUrl(url)}?refresh=${attempt}`;
 }
 
+function getYouTubeVideoId(url: string) {
+  try {
+    const parsedUrl = new URL(getOpenableUrl(url));
+    const hostName = parsedUrl.hostname.replace(/^www\./, "");
+
+    if (hostName === "youtu.be") {
+      return parsedUrl.pathname.split("/").filter(Boolean)[0] ?? null;
+    }
+
+    if (hostName === "youtube.com" || hostName === "m.youtube.com") {
+      const watchId = parsedUrl.searchParams.get("v");
+
+      if (watchId) {
+        return watchId;
+      }
+
+      const [route, videoId] = parsedUrl.pathname.split("/").filter(Boolean);
+
+      if (["embed", "shorts", "live"].includes(route) && videoId) {
+        return videoId;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getYouTubeThumbnailUrl(url: string) {
+  const videoId = getYouTubeVideoId(url);
+
+  if (!videoId) {
+    return null;
+  }
+
+  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+}
+
 function openPreviewCache() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(
@@ -136,6 +175,7 @@ function WebsitePreview({
     let retryTimeout: number | undefined;
     let objectUrl: string | undefined;
     let attempt = 0;
+    const youTubeThumbnailUrl = getYouTubeThumbnailUrl(website.url);
 
     async function setPreviewBlob(previewBlob: Blob) {
       objectUrl = URL.createObjectURL(previewBlob);
@@ -181,6 +221,11 @@ function WebsitePreview({
 
     async function initializePreview() {
       setPreviewSrc(null);
+
+      if (youTubeThumbnailUrl) {
+        setPreviewSrc(youTubeThumbnailUrl);
+        return;
+      }
 
       const cachedPreview = await readCachedPreview(website.url).catch(() => null);
 
