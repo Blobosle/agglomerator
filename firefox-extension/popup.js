@@ -1,4 +1,6 @@
-const BRIDGE_URL = "http://127.0.0.1:39287/websites";
+const BRIDGE_BASE_URL = "http://127.0.0.1:39287";
+const BRIDGE_TOKEN_URL = `${BRIDGE_BASE_URL}/bridge-token`;
+const BRIDGE_WEBSITES_URL = `${BRIDGE_BASE_URL}/websites`;
 
 const form = document.querySelector("#add-form");
 const nameInput = document.querySelector("#name-input");
@@ -6,6 +8,7 @@ const button = document.querySelector("button");
 const statusText = document.querySelector("#status");
 
 let currentTabUrl = "";
+let bridgeToken = "";
 
 function getOpenableUrl(url) {
   const trimmedUrl = url.trim();
@@ -31,6 +34,20 @@ function setStatus(message) {
 }
 
 async function initializePopup() {
+  const tokenResponse = await fetch(BRIDGE_TOKEN_URL);
+
+  if (!tokenResponse.ok) {
+    throw new Error("Missing bridge token");
+  }
+
+  const tokenPayload = await tokenResponse.json();
+
+  if (typeof tokenPayload?.token !== "string" || tokenPayload.token.length === 0) {
+    throw new Error("Invalid bridge token");
+  }
+
+  bridgeToken = tokenPayload.token;
+
   const tab = await getCurrentTab();
 
   if (!tab?.url) {
@@ -54,15 +71,20 @@ form.addEventListener("submit", async (event) => {
     setStatus("Name?");
     return;
   }
+  if (!bridgeToken) {
+    setStatus("Closed");
+    return;
+  }
 
   button.disabled = true;
   setStatus("...");
 
   try {
-    const response = await fetch(BRIDGE_URL, {
+    const response = await fetch(BRIDGE_WEBSITES_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Agglomerator-Token": bridgeToken,
       },
       body: JSON.stringify({
         name,

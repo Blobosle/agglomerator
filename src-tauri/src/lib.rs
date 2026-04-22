@@ -1,5 +1,7 @@
+use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::VecDeque,
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -16,8 +18,21 @@ use tauri::{
 const EXTENSION_SERVER_ADDR: &str = "127.0.0.1:39287";
 const STORAGE_FILE_NAME: &str = "websites.json";
 const WINDOW_PREFERENCES_FILE_NAME: &str = "window-preferences.json";
+const BRIDGE_TOKEN_FILE_NAME: &str = "bridge-token";
 const SETTINGS_MENU_ID: &str = "open_settings";
 const CLOSE_WINDOW_MENU_ID: &str = "close_window";
+const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
+const MAX_WEBSITE_NAME_CHARS: usize = 200;
+const MAX_WEBSITE_URL_CHARS: usize = 2048;
+const MAX_STORED_WEBSITES: usize = 1000;
+const BRIDGE_RATE_LIMIT_WINDOW_MILLIS: u64 = 10_000;
+const BRIDGE_RATE_LIMIT_MAX_REQUESTS: usize = 60;
+const BRIDGE_TOKEN_LENGTH_BYTES: usize = 32;
+
+#[derive(Serialize)]
+struct BridgeTokenResponse<'a> {
+    token: &'a str,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +80,8 @@ fn add_website(
     url: String,
     state: State<'_, StorageState>,
 ) -> Result<Vec<WebsiteRecord>, String> {
+    let (name, url) = validate_website_fields(&name, &url)?;
+
     add_website_record(
         &state.path,
         &state.lock,
@@ -126,6 +143,25 @@ fn initialize_window_preferences(app: &tauri::App) -> Result<PathBuf, Box<dyn st
     fs::create_dir_all(&app_data_dir)?;
 
     Ok(app_data_dir.join(WINDOW_PREFERENCES_FILE_NAME))
+}
+
+fn initialize_bridge_token(app: &tauri::App) -> Result<String, Box<dyn std::error::Error>> {
+    let app_data_dir = app.path().app_data_dir()?;
+    fs::create_dir_all(&app_data_dir)?;
+    let token_path = app_data_dir.join(BRIDGE_TOKEN_FILE_NAME);
+
+    if token_path.exists() {
+        let existing_token = fs::read_to_string(&token_path)?.trim().to_string();
+
+        if !existing_token.is_empty() {
+            return Ok(existing_token);
+        }
+    }
+
+    let token = generate_bridge_token();
+    fs::write(&token_path, format!("{token}\n"))?;
+
+    Ok(token)
 }
 
 fn restore_window_preferences(app: &tauri::App, path: &PathBuf) {
@@ -275,6 +311,7 @@ fn add_website_record(
 
     websites.push(record);
     websites.sort_by(|first, second| second.added_at.cmp(&first.added_at));
+    websites.truncate(MAX_STORED_WEBSITES);
     write_websites_file(path, &websites)
         .map_err(|error| format!("Unable to write websites JSON: {error}"))?;
 
@@ -318,7 +355,181 @@ fn current_timestamp_millis() -> u64 {
         .unwrap_or_default()
 }
 
-fn start_extension_server(path: PathBuf, lock: Arc<Mutex<()>>) {
+fn generate_bridge_token() -> String {
+    let mut random_bytes = [0_u8; BRIDGE_TOKEN_LENGTH_BYTES];
+    OsRng.fill_bytes(&mut random_bytes);
+
+    random_bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
+fn parse_content_length(request_headers: &str) -> Result<usize, String> {
+    for line in request_headers.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+
+        if !name.trim().eq_ignore_ascii_case("content-length") {
+            continue;
+        }
+
+        let parsed_length = value
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| "Invalid Content-Length".to_string())?;
+
+        return Ok(parsed_length);
+    }
+
+    Ok(0)
+}
+
+fn find_header_boundary(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|offset| offset + 4)
+}
+
+fn read_http_request(stream: &mut TcpStream) -> Result<String, String> {
+    let mut request_bytes = Vec::with_capacity(2048);
+    let mut buffer = [0_u8; 1024];
+    let mut expected_total_length: Option<usize> = None;
+
+    loop {
+        let bytes_read = stream
+            .read(&mut buffer)
+            .map_err(|error| format!("Unable to read extension request: {error}"))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        request_bytes.extend_from_slice(&buffer[..bytes_read]);
+
+        if request_bytes.len() > MAX_HTTP_REQUEST_BYTES {
+            return Err("Request too large".to_string());
+        }
+
+        if expected_total_length.is_none() {
+            if let Some(headers_end) = find_header_boundary(&request_bytes) {
+                let request_headers = std::str::from_utf8(&request_bytes[..headers_end])
+                    .map_err(|_| "Request was not valid UTF-8".to_string())?;
+                let body_length = parse_content_length(request_headers)?;
+
+                if headers_end + body_length > MAX_HTTP_REQUEST_BYTES {
+                    return Err("Request too large".to_string());
+                }
+
+                expected_total_length = Some(headers_end + body_length);
+            }
+        }
+
+        if let Some(total_length) = expected_total_length {
+            if request_bytes.len() >= total_length {
+                request_bytes.truncate(total_length);
+                break;
+            }
+        }
+    }
+
+    if request_bytes.is_empty() {
+        return Err("Request was empty".to_string());
+    }
+
+    String::from_utf8(request_bytes).map_err(|_| "Request was not valid UTF-8".to_string())
+}
+
+fn extract_header_value(request: &str, header_name: &str) -> Option<String> {
+    request.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if !name.trim().eq_ignore_ascii_case(header_name) {
+            return None;
+        }
+
+        Some(value.trim().to_string())
+    })
+}
+
+fn is_allowed_extension_origin(origin: &str) -> bool {
+    origin.starts_with("moz-extension://")
+        && origin.len() > "moz-extension://".len()
+        && !origin.contains('\r')
+        && !origin.contains('\n')
+}
+
+fn is_rate_limited(rate_limit: &Arc<Mutex<VecDeque<u64>>>) -> bool {
+    let now = current_timestamp_millis();
+    let Ok(mut history) = rate_limit.lock() else {
+        return true;
+    };
+
+    while let Some(first_seen) = history.front() {
+        if now.saturating_sub(*first_seen) > BRIDGE_RATE_LIMIT_WINDOW_MILLIS {
+            history.pop_front();
+        } else {
+            break;
+        }
+    }
+
+    if history.len() >= BRIDGE_RATE_LIMIT_MAX_REQUESTS {
+        return true;
+    }
+
+    history.push_back(now);
+    false
+}
+
+fn is_allowed_url(url: &str) -> bool {
+    let trimmed_url = url.trim();
+    if trimmed_url.is_empty() {
+        return false;
+    }
+
+    let normalized_url = if trimmed_url.contains("://") {
+        trimmed_url.to_string()
+    } else {
+        format!("https://{trimmed_url}")
+    };
+
+    let Some((scheme, _)) = normalized_url.split_once("://") else {
+        return false;
+    };
+
+    matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https")
+}
+
+fn validate_website_fields(name: &str, url: &str) -> Result<(String, String), String> {
+    let trimmed_name = name.trim();
+    let trimmed_url = url.trim();
+
+    if trimmed_name.is_empty() || trimmed_url.is_empty() {
+        return Err("Name and URL are required".to_string());
+    }
+
+    if trimmed_name.chars().count() > MAX_WEBSITE_NAME_CHARS {
+        return Err(format!("Name must be at most {MAX_WEBSITE_NAME_CHARS} characters"));
+    }
+
+    if trimmed_url.chars().count() > MAX_WEBSITE_URL_CHARS {
+        return Err(format!("URL must be at most {MAX_WEBSITE_URL_CHARS} characters"));
+    }
+
+    if !is_allowed_url(trimmed_url) {
+        return Err("Only http and https URLs are allowed".to_string());
+    }
+
+    Ok((trimmed_name.to_string(), trimmed_url.to_string()))
+}
+
+fn start_extension_server(
+    path: PathBuf,
+    lock: Arc<Mutex<()>>,
+    bridge_token: String,
+    rate_limit: Arc<Mutex<VecDeque<u64>>>,
+) {
     thread::spawn(move || {
         let listener = match TcpListener::bind(EXTENSION_SERVER_ADDR) {
             Ok(listener) => listener,
@@ -329,54 +540,129 @@ fn start_extension_server(path: PathBuf, lock: Arc<Mutex<()>>) {
         };
 
         for stream in listener.incoming().flatten() {
-            handle_extension_request(stream, &path, &lock);
+            handle_extension_request(stream, &path, &lock, &bridge_token, &rate_limit);
         }
     });
 }
 
-fn handle_extension_request(mut stream: TcpStream, path: &PathBuf, lock: &Arc<Mutex<()>>) {
-    let mut buffer = [0; 8192];
-    let bytes_read = match stream.read(&mut buffer) {
-        Ok(bytes_read) => bytes_read,
+fn handle_extension_request(
+    mut stream: TcpStream,
+    path: &PathBuf,
+    lock: &Arc<Mutex<()>>,
+    bridge_token: &str,
+    rate_limit: &Arc<Mutex<VecDeque<u64>>>,
+) {
+    let request = match read_http_request(&mut stream) {
+        Ok(request) => request,
         Err(error) => {
-            eprintln!("Unable to read extension request: {error}");
+            write_http_response(
+                &mut stream,
+                400,
+                &format!("{{\"error\":\"{error}\"}}"),
+                None,
+            );
             return;
         }
     };
 
-    let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-
-    if request.starts_with("OPTIONS ") {
-        write_http_response(&mut stream, 204, "");
+    if is_rate_limited(rate_limit) {
+        write_http_response(
+            &mut stream,
+            429,
+            "{\"error\":\"Too many requests\"}",
+            None,
+        );
         return;
     }
 
-    if !request.starts_with("POST /websites ") {
-        write_http_response(&mut stream, 404, "{\"error\":\"Not found\"}");
+    let request_line = request.lines().next().unwrap_or_default();
+    let mut request_line_parts = request_line.split_whitespace();
+    let method = request_line_parts.next().unwrap_or_default();
+    let request_path = request_line_parts.next().unwrap_or_default();
+    let origin_header = extract_header_value(&request, "Origin");
+    let allowed_origin = origin_header
+        .as_deref()
+        .filter(|origin| is_allowed_extension_origin(origin));
+
+    if method == "OPTIONS" {
+        if let Some(origin) = allowed_origin {
+            write_http_response(&mut stream, 204, "", Some(origin));
+        } else {
+            write_http_response(&mut stream, 403, "{\"error\":\"Forbidden origin\"}", None);
+        }
+        return;
+    }
+
+    if allowed_origin.is_none() {
+        write_http_response(&mut stream, 403, "{\"error\":\"Forbidden origin\"}", None);
+        return;
+    }
+    let allowed_origin = allowed_origin.unwrap_or_default();
+
+    if method == "GET" && request_path == "/bridge-token" {
+        let token_response = serde_json::to_string(&BridgeTokenResponse {
+            token: bridge_token,
+        })
+        .unwrap_or_else(|_| "{\"error\":\"Unable to serialize token\"}".to_string());
+        write_http_response(&mut stream, 200, &token_response, Some(allowed_origin));
+        return;
+    }
+
+    if method != "POST" || request_path != "/websites" {
+        write_http_response(&mut stream, 404, "{\"error\":\"Not found\"}", Some(allowed_origin));
+        return;
+    }
+
+    let token_header = extract_header_value(&request, "X-Agglomerator-Token").unwrap_or_default();
+    if token_header != bridge_token {
+        write_http_response(
+            &mut stream,
+            401,
+            "{\"error\":\"Unauthorized\"}",
+            Some(allowed_origin),
+        );
         return;
     }
 
     let Some((_, body)) = request.split_once("\r\n\r\n") else {
-        write_http_response(&mut stream, 400, "{\"error\":\"Missing request body\"}");
+        write_http_response(
+            &mut stream,
+            400,
+            "{\"error\":\"Missing request body\"}",
+            Some(allowed_origin),
+        );
         return;
     };
 
     let request_body = match serde_json::from_str::<AddWebsiteRequest>(body.trim()) {
         Ok(request_body) => request_body,
         Err(_) => {
-            write_http_response(&mut stream, 400, "{\"error\":\"Invalid JSON\"}");
+            write_http_response(
+                &mut stream,
+                400,
+                "{\"error\":\"Invalid JSON\"}",
+                Some(allowed_origin),
+            );
             return;
         }
     };
 
-    if request_body.name.trim().is_empty() || request_body.url.trim().is_empty() {
-        write_http_response(&mut stream, 400, "{\"error\":\"Name and URL are required\"}");
-        return;
-    }
+    let (name, url) = match validate_website_fields(&request_body.name, &request_body.url) {
+        Ok(fields) => fields,
+        Err(error) => {
+            write_http_response(
+                &mut stream,
+                400,
+                &format!("{{\"error\":\"{error}\"}}"),
+                Some(allowed_origin),
+            );
+            return;
+        }
+    };
 
     let record = WebsiteRecord {
-        name: request_body.name.trim().to_string(),
-        url: request_body.url.trim().to_string(),
+        name,
+        url,
         added_at: request_body
             .added_at
             .unwrap_or_else(current_timestamp_millis),
@@ -385,36 +671,52 @@ fn handle_extension_request(mut stream: TcpStream, path: &PathBuf, lock: &Arc<Mu
     match add_website_record(path, lock, record) {
         Ok(websites) => {
             let response_body = serde_json::to_string(&websites).unwrap_or_else(|_| "[]".into());
-            write_http_response(&mut stream, 200, &response_body);
+            write_http_response(&mut stream, 200, &response_body, Some(allowed_origin));
         }
         Err(error) => {
             let response_body = format!("{{\"error\":\"{error}\"}}");
-            write_http_response(&mut stream, 500, &response_body);
+            write_http_response(&mut stream, 500, &response_body, Some(allowed_origin));
         }
     }
 }
 
-fn write_http_response(stream: &mut TcpStream, status_code: u16, body: &str) {
+fn write_http_response(
+    stream: &mut TcpStream,
+    status_code: u16,
+    body: &str,
+    allow_origin: Option<&str>,
+) {
     let status_text = match status_code {
         200 => "OK",
         204 => "No Content",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        429 => "Too Many Requests",
         400 => "Bad Request",
         404 => "Not Found",
         _ => "Internal Server Error",
     };
-    let response = format!(
+    let mut headers = format!(
         "HTTP/1.1 {status_code} {status_text}\r\n\
-         Access-Control-Allow-Origin: *\r\n\
-         Access-Control-Allow-Headers: content-type\r\n\
-         Access-Control-Allow-Methods: POST, OPTIONS\r\n\
          Content-Type: application/json\r\n\
          Content-Length: {}\r\n\
-         Connection: close\r\n\r\n{}",
+         Connection: close\r\n",
         body.len(),
-        body,
     );
 
-    let _ = stream.write_all(response.as_bytes());
+    if let Some(origin) = allow_origin {
+        headers.push_str(&format!(
+            "Access-Control-Allow-Origin: {origin}\r\n\
+             Access-Control-Allow-Headers: content-type, x-agglomerator-token\r\n\
+             Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
+             Vary: Origin\r\n",
+        ));
+    }
+
+    headers.push_str("\r\n");
+    headers.push_str(body);
+
+    let _ = stream.write_all(headers.as_bytes());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -430,6 +732,8 @@ pub fn run() {
             let storage_lock = Arc::new(Mutex::new(()));
             let window_preferences_path = initialize_window_preferences(app)?;
             let window_preferences_lock = Arc::new(Mutex::new(()));
+            let bridge_token = initialize_bridge_token(app)?;
+            let bridge_rate_limit = Arc::new(Mutex::new(VecDeque::new()));
 
             app.manage(StorageState {
                 path: storage_path.clone(),
@@ -441,7 +745,7 @@ pub fn run() {
             });
 
             restore_window_preferences(app, &window_preferences_path);
-            start_extension_server(storage_path, storage_lock);
+            start_extension_server(storage_path, storage_lock, bridge_token, bridge_rate_limit);
 
             Ok(())
         })
