@@ -4,6 +4,8 @@
 
 Graphical interface to archive relevant websites to revisit.
 
+<img width="1538" height="985" src="https://github.com/user-attachments/assets/b217a55b-dd8a-4ca5-86a1-d14954d6bbff" />
+
 </div>
 
 ## Usage
