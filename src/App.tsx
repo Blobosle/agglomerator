@@ -1025,11 +1025,19 @@ function App() {
     }
 
     function handleUndoKeyDown(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+      if (event.altKey || event.shiftKey) {
         return;
       }
 
-      if (event.key !== "u" || isTextEditingTarget(event.target)) {
+      const isUndoShortcut =
+        event.key === "u" && !event.metaKey && !event.ctrlKey;
+      const isMacUndoShortcut =
+        event.key.toLowerCase() === "z" && event.metaKey && !event.ctrlKey;
+
+      if (
+        (!isUndoShortcut && !isMacUndoShortcut) ||
+        isTextEditingTarget(event.target)
+      ) {
         return;
       }
 
