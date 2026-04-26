@@ -32,6 +32,7 @@ const PREVIEW_CACHE_DB_NAME = "agglomerator-preview-cache";
 const PREVIEW_CACHE_STORE_NAME = "previews";
 const PREVIEW_CACHE_VERSION = 1;
 const KEYBINDING_STORAGE_KEY = "agglomerator-keybindings";
+const KEYBINDING_SYNC_CHANNEL = "agglomerator-keybindings-sync";
 
 function loadStoredKeybindings() {
   try {
@@ -259,6 +260,49 @@ function KeybindingSettings({
   ) => void;
   onStartRecording: (command: KeyboardNavigationCommand, slot: number) => void;
 }) {
+  useEffect(() => {
+    if (!recordingBinding) {
+      return;
+    }
+
+    const activeRecordingBinding = recordingBinding;
+
+    function handleRecordingKeyDown(event: KeyboardEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const keybinding = getKeybindingFromEvent(event);
+
+      if (event.key === "Escape") {
+        onCancelRecording();
+        return;
+      }
+
+      if (event.metaKey || event.ctrlKey) {
+        return;
+      }
+
+      if (
+        ["Alt", "Control", "Meta", "Shift"].includes(event.key) ||
+        keybinding.length === 0
+      ) {
+        return;
+      }
+
+      onSetBinding(
+        activeRecordingBinding.command,
+        activeRecordingBinding.slot,
+        keybinding,
+      );
+    }
+
+    window.addEventListener("keydown", handleRecordingKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleRecordingKeyDown, true);
+    };
+  }, [onCancelRecording, onSetBinding, recordingBinding]);
+
   return (
     <section className="px-5 py-3 text-sm [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace]">
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -299,34 +343,6 @@ function KeybindingSettings({
                         }`}
                         type="button"
                         onClick={() => onStartRecording(command, slot)}
-                        onKeyDown={(event) => {
-                          if (!isRecording) {
-                            return;
-                          }
-
-                          event.preventDefault();
-                          event.stopPropagation();
-
-                          if (event.key === "Escape") {
-                            onCancelRecording();
-                            return;
-                          }
-
-                          if (
-                            event.metaKey ||
-                            event.ctrlKey ||
-                            event.altKey ||
-                            ["Alt", "Control", "Meta", "Shift"].includes(event.key)
-                          ) {
-                            return;
-                          }
-
-                          onSetBinding(
-                            command,
-                            slot,
-                            getKeybindingFromEvent(event),
-                          );
-                        }}
                       >
                         {isRecording
                           ? "..."
@@ -730,6 +746,14 @@ function App() {
     } catch {
       // Keep the in-memory settings even if persistence is unavailable.
     }
+
+    if (!isSettingsWindow || typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    const channel = new BroadcastChannel(KEYBINDING_SYNC_CHANNEL);
+    channel.postMessage(keybindings);
+    channel.close();
   }, [keybindings]);
 
   useEffect(() => {
@@ -747,8 +771,20 @@ function App() {
 
     window.addEventListener("storage", syncStoredKeybindings);
 
+    if (typeof BroadcastChannel === "undefined") {
+      return () => {
+        window.removeEventListener("storage", syncStoredKeybindings);
+      };
+    }
+
+    const channel = new BroadcastChannel(KEYBINDING_SYNC_CHANNEL);
+    channel.onmessage = (event) => {
+      setKeybindings(normalizeKeybindings(event.data as Partial<KeybindingMap>));
+    };
+
     return () => {
       window.removeEventListener("storage", syncStoredKeybindings);
+      channel.close();
     };
   }, []);
 

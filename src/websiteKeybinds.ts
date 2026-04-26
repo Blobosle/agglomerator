@@ -99,15 +99,24 @@ export function normalizeKeybindings(keybindings: Partial<KeybindingMap>) {
   }, {} as KeybindingMap);
 }
 
+function isModifierOnlyKey(key: string) {
+  return ["Alt", "Control", "Meta", "Shift"].includes(key);
+}
+
 function getKeyboardNavigationCommand(
   event: KeyboardEvent,
   keybindings: KeybindingMap,
 ): KeyboardNavigationCommand | null {
-  if (event.metaKey || event.ctrlKey || event.altKey) {
+  if (event.metaKey || event.ctrlKey) {
     return null;
   }
 
   const key = getKeybindingFromEvent(event);
+
+  if (isModifierOnlyKey(key)) {
+    return null;
+  }
+
   const normalizedKeybindings = normalizeKeybindings(keybindings);
   const matchingCommand = KEYBINDING_COMMANDS.find((command) =>
     normalizedKeybindings[command].includes(key),
