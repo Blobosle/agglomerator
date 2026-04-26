@@ -120,6 +120,14 @@ fn delete_website(
     delete_website_record(&state.path, &state.lock, &url, added_at)
 }
 
+#[tauri::command]
+fn restore_website(
+    website: WebsiteRecord,
+    state: State<'_, StorageState>,
+) -> Result<Vec<WebsiteRecord>, String> {
+    restore_website_record(&state.path, &state.lock, website)
+}
+
 fn initialize_storage(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let app_data_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&app_data_dir)?;
@@ -414,6 +422,28 @@ fn delete_website_record(
 
     websites.retain(|website| !(website.url == url && website.added_at == added_at));
     websites.sort_by(|first, second| second.added_at.cmp(&first.added_at));
+    write_websites_file(path, &websites)
+        .map_err(|error| format!("Unable to write websites JSON: {error}"))?;
+
+    Ok(websites)
+}
+
+fn restore_website_record(
+    path: &PathBuf,
+    lock: &Arc<Mutex<()>>,
+    record: WebsiteRecord,
+) -> Result<Vec<WebsiteRecord>, String> {
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Storage lock is unavailable".to_string())?;
+    let mut websites = read_websites_file(path)?;
+
+    websites.retain(|website| {
+        !(website.url == record.url && website.added_at == record.added_at)
+    });
+    websites.push(record);
+    websites.sort_by(|first, second| second.added_at.cmp(&first.added_at));
+    websites.truncate(MAX_STORED_WEBSITES);
     write_websites_file(path, &websites)
         .map_err(|error| format!("Unable to write websites JSON: {error}"))?;
 
@@ -890,7 +920,8 @@ pub fn run() {
             list_websites,
             add_website,
             delete_website,
-            clear_website_fallback_preview
+            clear_website_fallback_preview,
+            restore_website
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

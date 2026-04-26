@@ -35,6 +35,7 @@ const PREVIEW_CACHE_STORE_NAME = "previews";
 const PREVIEW_CACHE_VERSION = 1;
 const KEYBINDING_STORAGE_KEY = "agglomerator-keybindings";
 const KEYBINDING_SYNC_CHANNEL = "agglomerator-keybindings-sync";
+const MAX_UNDO_DELETE_ENTRIES = 3;
 
 function loadStoredKeybindings() {
   try {
@@ -239,6 +240,14 @@ function startWindowDrag(event: PointerEvent<HTMLDivElement>) {
 
 function openWebsite(url: string) {
   void openUrl(getOpenableUrl(url)).catch(() => undefined);
+}
+
+function isTextEditingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(target.closest("input, textarea, select, [contenteditable]"));
 }
 
 function KeybindingSettings({
@@ -741,6 +750,7 @@ function App() {
   >({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const websiteGridRef = useRef<HTMLUListElement>(null);
+  const deletedWebsitesRef = useRef<WebsiteRecord[]>([]);
   const [websiteGridColumnCount, setWebsiteGridColumnCount] = useState(1);
   const previewClickTimeoutRef = useRef<number | undefined>(undefined);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -966,8 +976,27 @@ function App() {
       addedAt: website.addedAt,
     });
 
+    deletedWebsitesRef.current = [
+      website,
+      ...deletedWebsitesRef.current,
+    ].slice(0, MAX_UNDO_DELETE_ENTRIES);
     setWebsites(sortWebsitesByRecency(updatedWebsites));
   }
+
+  const undoDelete = useCallback(async () => {
+    const website = deletedWebsitesRef.current[0];
+
+    if (!website) {
+      return;
+    }
+
+    const updatedWebsites = await invoke<WebsiteRecord[]>("restore_website", {
+      website,
+    });
+
+    deletedWebsitesRef.current = deletedWebsitesRef.current.slice(1);
+    setWebsites(sortWebsitesByRecency(updatedWebsites));
+  }, []);
 
   function getPreviewCacheKey(website: WebsiteRecord) {
     return `${website.url}:${website.addedAt}`;
@@ -989,6 +1018,31 @@ function App() {
       };
     });
   }
+
+  useEffect(() => {
+    if (isSettingsWindow) {
+      return;
+    }
+
+    function handleUndoKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+        return;
+      }
+
+      if (event.key !== "u" || isTextEditingTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      void undoDelete().catch(() => undefined);
+    }
+
+    window.addEventListener("keydown", handleUndoKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleUndoKeyDown);
+    };
+  }, [isSettingsWindow, undoDelete]);
 
   if (isSettingsWindow) {
     return (
