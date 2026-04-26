@@ -17,17 +17,28 @@
         placeholder="Name"
         aria-label="Website name"
       ></textarea>
-      <div class="grid grid-cols-3 items-center">
-        <span aria-hidden="true"></span>
-        <button
-          class="justify-self-center border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
-          type="submit"
-        >
-          Add
-        </button>
+      <div id="actions-row" class="actions-row">
+        <div class="button-group">
+          <button
+            class="border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
+            type="submit"
+            name="submitMode"
+            value="add"
+          >
+            Add
+          </button>
+          <button
+            class="border-0 bg-transparent p-0 text-sm text-blue-700 underline hover:bg-blue-500 hover:text-white disabled:cursor-default disabled:bg-transparent disabled:text-slate-400"
+            type="submit"
+            name="submitMode"
+            value="preview"
+          >
+            Preview
+          </button>
+        </div>
         <p
           id="status"
-          class="m-0 justify-self-end text-xs text-slate-500"
+          class="m-0 text-xs text-slate-500"
           role="status"
           aria-live="polite"
         ></p>

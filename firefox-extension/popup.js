@@ -4,7 +4,8 @@ const BRIDGE_WEBSITES_URL = `${BRIDGE_BASE_URL}/websites`;
 
 const form = document.querySelector("#add-form");
 const nameInput = document.querySelector("#name-input");
-const button = document.querySelector("button");
+const buttons = Array.from(document.querySelectorAll('button[type="submit"]'));
+const actionsRow = document.querySelector("#actions-row");
 const statusText = document.querySelector("#status");
 
 let currentTabUrl = "";
@@ -29,11 +30,76 @@ async function getCurrentTab() {
   return tabs[0];
 }
 
+async function captureFallbackPreview(tab) {
+  if (typeof tab?.windowId !== "number") {
+    return null;
+  }
+
+  try {
+    const screenshotDataUrl = await browser.tabs.captureVisibleTab(tab.windowId, {
+      format: "jpeg",
+      quality: 35,
+    });
+
+    return await downscaleScreenshot(screenshotDataUrl);
+  } catch {
+    return null;
+  }
+}
+
+async function downscaleScreenshot(screenshotDataUrl) {
+  const screenshotImage = await loadImage(screenshotDataUrl);
+  const maxWidth = 640;
+  const scale = Math.min(1, maxWidth / screenshotImage.naturalWidth);
+  const targetWidth = Math.max(1, Math.round(screenshotImage.naturalWidth * scale));
+  const targetHeight = Math.max(1, Math.round(screenshotImage.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return screenshotDataUrl;
+  }
+
+  context.drawImage(screenshotImage, 0, 0, targetWidth, targetHeight);
+
+  return canvas.toDataURL("image/jpeg", 0.45);
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Unable to load screenshot"));
+    image.src = source;
+  });
+}
+
 function setStatus(message) {
   statusText.textContent = message;
+  actionsRow.classList.toggle("has-status", message.trim().length > 0);
 }
 
 async function initializePopup() {
+  const tab = await getCurrentTab();
+
+  if (!tab?.url) {
+    setStatus("No URL");
+    for (const button of buttons) {
+      button.disabled = true;
+    }
+    return;
+  }
+
+  currentTabUrl = getOpenableUrl(tab.url);
+  nameInput.value = tab.title || "";
+  nameInput.focus();
+  nameInput.setSelectionRange(0, 0);
+
   const tokenResponse = await fetch(BRIDGE_TOKEN_URL);
 
   if (!tokenResponse.ok) {
@@ -47,23 +113,12 @@ async function initializePopup() {
   }
 
   bridgeToken = tokenPayload.token;
-
-  const tab = await getCurrentTab();
-
-  if (!tab?.url) {
-    setStatus("No URL");
-    button.disabled = true;
-    return;
-  }
-
-  currentTabUrl = getOpenableUrl(tab.url);
-  nameInput.value = tab.title || "";
-  nameInput.focus();
-  nameInput.setSelectionRange(0, 0);
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const submitButton = event.submitter;
+  const shouldPreferScreenshot = submitButton?.value === "preview";
 
   const name = nameInput.value.trim();
 
@@ -76,10 +131,14 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  button.disabled = true;
+  for (const button of buttons) {
+    button.disabled = true;
+  }
   setStatus("...");
 
   try {
+    const tab = await getCurrentTab();
+    const fallbackPreviewDataUrl = await captureFallbackPreview(tab);
     const response = await fetch(BRIDGE_WEBSITES_URL, {
       method: "POST",
       headers: {
@@ -90,6 +149,8 @@ form.addEventListener("submit", async (event) => {
         name,
         url: currentTabUrl,
         addedAt: Date.now(),
+        fallbackPreviewDataUrl,
+        preferFallbackPreview: shouldPreferScreenshot,
       }),
     });
 
@@ -102,11 +163,20 @@ form.addEventListener("submit", async (event) => {
   } catch {
     setStatus("Closed");
   } finally {
-    button.disabled = false;
+    for (const button of buttons) {
+      button.disabled = false;
+    }
   }
 });
 
 void initializePopup().catch(() => {
-  setStatus("No tab");
-  button.disabled = true;
+  if (!currentTabUrl) {
+    setStatus("No tab");
+  } else {
+    setStatus("Closed");
+  }
+
+  for (const button of buttons) {
+    button.disabled = true;
+  }
 });

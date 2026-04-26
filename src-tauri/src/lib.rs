@@ -21,13 +21,14 @@ const WINDOW_PREFERENCES_FILE_NAME: &str = "window-preferences.json";
 const BRIDGE_TOKEN_FILE_NAME: &str = "bridge-token";
 const SETTINGS_MENU_ID: &str = "open_settings";
 const CLOSE_WINDOW_MENU_ID: &str = "close_window";
-const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
+const MAX_HTTP_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_WEBSITE_NAME_CHARS: usize = 200;
 const MAX_WEBSITE_URL_CHARS: usize = 2048;
 const MAX_STORED_WEBSITES: usize = 1000;
 const BRIDGE_RATE_LIMIT_WINDOW_MILLIS: u64 = 10_000;
 const BRIDGE_RATE_LIMIT_MAX_REQUESTS: usize = 60;
 const BRIDGE_TOKEN_LENGTH_BYTES: usize = 32;
+const MAX_FALLBACK_PREVIEW_DATA_URL_CHARS: usize = 1_500_000;
 
 #[derive(Serialize)]
 struct BridgeTokenResponse<'a> {
@@ -40,6 +41,10 @@ struct WebsiteRecord {
     name: String,
     url: String,
     added_at: u64,
+    #[serde(default)]
+    fallback_preview_data_url: Option<String>,
+    #[serde(default)]
+    prefer_fallback_preview: bool,
 }
 
 #[derive(Deserialize)]
@@ -48,6 +53,8 @@ struct AddWebsiteRequest {
     name: String,
     url: String,
     added_at: Option<u64>,
+    fallback_preview_data_url: Option<String>,
+    prefer_fallback_preview: Option<bool>,
 }
 
 struct StorageState {
@@ -89,8 +96,19 @@ fn add_website(
             name,
             url,
             added_at: current_timestamp_millis(),
+            fallback_preview_data_url: None,
+            prefer_fallback_preview: false,
         },
     )
+}
+
+#[tauri::command]
+fn clear_website_fallback_preview(
+    url: String,
+    added_at: u64,
+    state: State<'_, StorageState>,
+) -> Result<Vec<WebsiteRecord>, String> {
+    clear_website_fallback_preview_record(&state.path, &state.lock, &url, added_at)
 }
 
 #[tauri::command]
@@ -114,21 +132,29 @@ fn initialize_storage(app: &tauri::App) -> Result<PathBuf, Box<dyn std::error::E
                 name: "OpenAI".into(),
                 url: "https://openai.com".into(),
                 added_at: 1_776_733_200_000,
+                fallback_preview_data_url: None,
+                prefer_fallback_preview: false,
             },
             WebsiteRecord {
                 name: "Tauri".into(),
                 url: "https://tauri.app".into(),
                 added_at: 1_776_732_300_000,
+                fallback_preview_data_url: None,
+                prefer_fallback_preview: false,
             },
             WebsiteRecord {
                 name: "React".into(),
                 url: "https://react.dev".into(),
                 added_at: 1_776_731_400_000,
+                fallback_preview_data_url: None,
+                prefer_fallback_preview: false,
             },
             WebsiteRecord {
                 name: "Vite".into(),
                 url: "https://vite.dev".into(),
                 added_at: 1_776_730_500_000,
+                fallback_preview_data_url: None,
+                prefer_fallback_preview: false,
             },
         ];
 
@@ -208,6 +234,29 @@ fn save_window_preferences(window: &tauri::Window) {
     }
 }
 
+fn save_webview_window_preferences(window: &tauri::WebviewWindow) {
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let preferences = WindowPreferences {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y,
+    };
+    let preferences_state = window.state::<WindowPreferencesState>();
+    let Ok(_guard) = preferences_state.lock.lock() else {
+        return;
+    };
+
+    if let Ok(file_contents) = serde_json::to_string_pretty(&preferences) {
+        let _ = fs::write(&preferences_state.path, format!("{file_contents}\n"));
+    }
+}
+
 fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings_item = MenuItem::with_id(
         app,
@@ -238,7 +287,7 @@ fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         if event.id() == SETTINGS_MENU_ID {
             open_settings_window(app_handle);
         } else if event.id() == CLOSE_WINDOW_MENU_ID {
-            close_settings_window(app_handle);
+            close_focused_window(app_handle);
         }
     });
 
@@ -271,16 +320,24 @@ fn open_settings_window(app: &tauri::AppHandle) {
     let _ = window.set_title("Settings");
 }
 
-fn close_settings_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("settings") else {
-        return;
-    };
-    let Ok(is_focused) = window.is_focused() else {
-        return;
-    };
+fn close_focused_window(app: &tauri::AppHandle) {
+    for window in app.webview_windows().values() {
+        let Ok(is_focused) = window.is_focused() else {
+            continue;
+        };
 
-    if is_focused {
-        let _ = window.close();
+        if !is_focused {
+            continue;
+        }
+
+        if window.label() == "main" {
+            save_webview_window_preferences(window);
+            let _ = window.hide();
+        } else {
+            let _ = window.close();
+        }
+
+        break;
     }
 }
 
@@ -312,6 +369,32 @@ fn add_website_record(
     websites.push(record);
     websites.sort_by(|first, second| second.added_at.cmp(&first.added_at));
     websites.truncate(MAX_STORED_WEBSITES);
+    write_websites_file(path, &websites)
+        .map_err(|error| format!("Unable to write websites JSON: {error}"))?;
+
+    Ok(websites)
+}
+
+fn clear_website_fallback_preview_record(
+    path: &PathBuf,
+    lock: &Arc<Mutex<()>>,
+    url: &str,
+    added_at: u64,
+) -> Result<Vec<WebsiteRecord>, String> {
+    let _guard = lock
+        .lock()
+        .map_err(|_| "Storage lock is unavailable".to_string())?;
+    let mut websites = read_websites_file(path)?;
+
+    if let Some(website) = websites
+        .iter_mut()
+        .find(|website| website.url == url && website.added_at == added_at)
+    {
+        website.fallback_preview_data_url = None;
+        website.prefer_fallback_preview = false;
+    }
+
+    websites.sort_by(|first, second| second.added_at.cmp(&first.added_at));
     write_websites_file(path, &websites)
         .map_err(|error| format!("Unable to write websites JSON: {error}"))?;
 
@@ -363,6 +446,29 @@ fn generate_bridge_token() -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
+}
+
+fn validate_fallback_preview_data_url(
+    fallback_preview_data_url: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(fallback_preview_data_url) = fallback_preview_data_url else {
+        return Ok(None);
+    };
+    let trimmed_data_url = fallback_preview_data_url.trim();
+
+    if trimmed_data_url.is_empty() {
+        return Ok(None);
+    }
+
+    if trimmed_data_url.len() > MAX_FALLBACK_PREVIEW_DATA_URL_CHARS {
+        return Err("Fallback preview was too large".to_string());
+    }
+
+    if !trimmed_data_url.starts_with("data:image/jpeg;base64,") {
+        return Err("Fallback preview format was invalid".to_string());
+    }
+
+    Ok(Some(trimmed_data_url.to_string()))
 }
 
 fn parse_content_length(request_headers: &str) -> Result<usize, String> {
@@ -660,12 +766,28 @@ fn handle_extension_request(
         }
     };
 
+    let fallback_preview_data_url =
+        match validate_fallback_preview_data_url(request_body.fallback_preview_data_url) {
+            Ok(fallback_preview_data_url) => fallback_preview_data_url,
+            Err(error) => {
+                write_http_response(
+                    &mut stream,
+                    400,
+                    &format!("{{\"error\":\"{error}\"}}"),
+                    Some(allowed_origin),
+                );
+                return;
+            }
+        };
+
     let record = WebsiteRecord {
         name,
         url,
         added_at: request_body
             .added_at
             .unwrap_or_else(current_timestamp_millis),
+        fallback_preview_data_url,
+        prefer_fallback_preview: request_body.prefer_fallback_preview.unwrap_or(false),
     };
 
     match add_website_record(path, lock, record) {
@@ -767,7 +889,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_websites,
             add_website,
-            delete_website
+            delete_website,
+            clear_website_fallback_preview
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

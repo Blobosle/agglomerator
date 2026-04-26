@@ -28,6 +28,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.grid-cols-\[1fr_auto_auto\] {
+  grid-template-columns: 1fr auto auto;
+}
+
 .items-center {
   align-items: center;
 }
@@ -209,4 +213,28 @@
 
 .gap-1\.5 {
   gap: 0.375rem;
+}
+
+.actions-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+}
+
+.actions-row.has-status {
+  justify-content: space-between;
+}
+
+.button-group {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.actions-row.has-status .button-group {
+  justify-content: flex-start;
+}
+
+.actions-row:not(.has-status) #status {
+  display: none;
 }

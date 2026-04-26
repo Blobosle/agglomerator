@@ -26,6 +26,8 @@ type WebsiteRecord = {
   name: string;
   url: string;
   addedAt: number;
+  fallbackPreviewDataUrl?: string | null;
+  preferFallbackPreview?: boolean;
 };
 
 const PREVIEW_CACHE_DB_NAME = "agglomerator-preview-cache";
@@ -564,6 +566,7 @@ function WebsitePreview({
     let retryTimeout: number | undefined;
     let objectUrl: string | undefined;
     let attempt = 0;
+    let clearedFallbackPreview = false;
     const previewCacheStorageKey = getPreviewCacheStorageKey(website.url);
 
     async function setPreviewBlob(previewBlob: Blob) {
@@ -572,6 +575,19 @@ function WebsitePreview({
       if (isMounted) {
         setPreviewSrc(objectUrl);
       }
+    }
+
+    async function clearFallbackPreview() {
+      if (clearedFallbackPreview || !website.fallbackPreviewDataUrl) {
+        return;
+      }
+
+      clearedFallbackPreview = true;
+
+      await invoke<WebsiteRecord[]>("clear_website_fallback_preview", {
+        url: website.url,
+        addedAt: website.addedAt,
+      }).catch(() => undefined);
     }
 
     async function loadCustomPreview(previewUrl: string) {
@@ -589,6 +605,7 @@ function WebsitePreview({
       await writeCachedPreview(previewCacheStorageKey, previewBlob).catch(
         () => undefined,
       );
+      await clearFallbackPreview();
       await setPreviewBlob(previewBlob);
     }
 
@@ -610,6 +627,7 @@ function WebsitePreview({
         await writeCachedPreview(previewCacheStorageKey, previewBlob).catch(
           () => undefined,
         );
+        await clearFallbackPreview();
         await setPreviewBlob(previewBlob);
       } catch {
         const previewImage = new Image();
@@ -621,6 +639,9 @@ function WebsitePreview({
           }
         };
         previewImage.onerror = () => {
+          if (isMounted && website.fallbackPreviewDataUrl) {
+            setPreviewSrc(website.fallbackPreviewDataUrl);
+          }
           attempt += 1;
           retryTimeout = window.setTimeout(loadPreview, 3000);
         };
@@ -630,6 +651,11 @@ function WebsitePreview({
 
     async function initializePreview() {
       setPreviewSrc(null);
+
+      if (website.preferFallbackPreview && website.fallbackPreviewDataUrl) {
+        setPreviewSrc(website.fallbackPreviewDataUrl);
+        return;
+      }
 
       const cachedPreview = await readCachedPreview(previewCacheStorageKey).catch(
         () => null,
@@ -659,6 +685,9 @@ function WebsitePreview({
 
     void initializePreview().catch(() => {
       if (isMounted) {
+        if (website.fallbackPreviewDataUrl) {
+          setPreviewSrc(website.fallbackPreviewDataUrl);
+        }
         retryTimeout = window.setTimeout(loadPreview, 3000);
       }
     });
@@ -671,7 +700,13 @@ function WebsitePreview({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [website.url, refreshKey]);
+  }, [
+    website.addedAt,
+    website.fallbackPreviewDataUrl,
+    website.preferFallbackPreview,
+    website.url,
+    refreshKey,
+  ]);
 
   return (
     previewSrc && (
