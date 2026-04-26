@@ -245,7 +245,7 @@ export function useWebsiteKeybindNavigation({
 
       if (command === "enterDeleteMode") {
         event.preventDefault();
-        setIsKeyboardMode(false);
+        setIsKeyboardMode(true);
         onEnterDeleteMode();
         return;
       }
