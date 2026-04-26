@@ -111,6 +111,49 @@ function getYouTubeThumbnailUrl(url: string) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 }
 
+function getAmazonProductAsin(url: string) {
+  try {
+    const parsedUrl = new URL(getOpenableUrl(url));
+    const asinMatch = parsedUrl.pathname.match(
+      /\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:[/?]|$)/i,
+    );
+
+    return asinMatch?.[1]?.toUpperCase() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getAmazonProductImageUrl(url: string) {
+  const asin = getAmazonProductAsin(url);
+
+  if (!asin) {
+    return null;
+  }
+
+  return `https://m.media-amazon.com/images/P/${asin}.01._SX385_.jpg`;
+}
+
+function shouldFitPreviewImage(url: string) {
+  return Boolean(getAmazonProductImageUrl(url));
+}
+
+function getPreviewContainerClassName(url: string) {
+  return shouldFitPreviewImage(url) ? "bg-white/70" : "bg-slate-100";
+}
+
+function usesCustomPreview(url: string) {
+  return Boolean(getYouTubeThumbnailUrl(url)) || Boolean(getAmazonProductImageUrl(url));
+}
+
+function getPreviewCacheStorageKey(url: string) {
+  if (usesCustomPreview(url)) {
+    return `custom-preview:${url}`;
+  }
+
+  return url;
+}
+
 function openPreviewCache() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(
@@ -505,7 +548,7 @@ function WebsitePreview({
     let retryTimeout: number | undefined;
     let objectUrl: string | undefined;
     let attempt = 0;
-    const youTubeThumbnailUrl = getYouTubeThumbnailUrl(website.url);
+    const previewCacheStorageKey = getPreviewCacheStorageKey(website.url);
 
     async function setPreviewBlob(previewBlob: Blob) {
       objectUrl = URL.createObjectURL(previewBlob);
@@ -513,6 +556,24 @@ function WebsitePreview({
       if (isMounted) {
         setPreviewSrc(objectUrl);
       }
+    }
+
+    async function loadCustomPreview(previewUrl: string) {
+      const response = await fetch(previewUrl, {
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      });
+
+      if (!response.ok) {
+        throw new Error("Custom preview was not available");
+      }
+
+      const previewBlob = await response.blob();
+
+      await writeCachedPreview(previewCacheStorageKey, previewBlob).catch(
+        () => undefined,
+      );
+      await setPreviewBlob(previewBlob);
     }
 
     async function loadPreview() {
@@ -530,7 +591,9 @@ function WebsitePreview({
 
         const previewBlob = await response.blob();
 
-        await writeCachedPreview(website.url, previewBlob).catch(() => undefined);
+        await writeCachedPreview(previewCacheStorageKey, previewBlob).catch(
+          () => undefined,
+        );
         await setPreviewBlob(previewBlob);
       } catch {
         const previewImage = new Image();
@@ -552,15 +615,26 @@ function WebsitePreview({
     async function initializePreview() {
       setPreviewSrc(null);
 
-      if (youTubeThumbnailUrl) {
-        setPreviewSrc(youTubeThumbnailUrl);
-        return;
-      }
-
-      const cachedPreview = await readCachedPreview(website.url).catch(() => null);
+      const cachedPreview = await readCachedPreview(previewCacheStorageKey).catch(
+        () => null,
+      );
 
       if (cachedPreview) {
         await setPreviewBlob(cachedPreview);
+        return;
+      }
+
+      const youTubeThumbnailUrl = getYouTubeThumbnailUrl(website.url);
+
+      if (youTubeThumbnailUrl) {
+        await loadCustomPreview(youTubeThumbnailUrl);
+        return;
+      }
+
+      const amazonProductImageUrl = getAmazonProductImageUrl(website.url);
+
+      if (amazonProductImageUrl) {
+        await loadCustomPreview(amazonProductImageUrl);
         return;
       }
 
@@ -586,7 +660,9 @@ function WebsitePreview({
   return (
     previewSrc && (
       <img
-        className="h-full w-full select-none object-cover"
+        className={`h-full w-full select-none ${
+          shouldFitPreviewImage(website.url) ? "object-contain" : "object-cover"
+        }`}
         src={previewSrc}
         alt=""
         draggable={false}
@@ -827,7 +903,12 @@ function App() {
   }
 
   async function refreshPreview(website: WebsiteRecord) {
-    await deleteCachedPreview(website.url).catch(() => undefined);
+    await Promise.all([
+      deleteCachedPreview(website.url).catch(() => undefined),
+      deleteCachedPreview(getPreviewCacheStorageKey(website.url)).catch(
+        () => undefined,
+      ),
+    ]);
     setPreviewRefreshKeys((currentKeys) => {
       const cacheKey = getPreviewCacheKey(website);
 
@@ -926,7 +1007,7 @@ function App() {
               }}
             />
             <button
-              className="block aspect-video w-full cursor-pointer overflow-hidden border-0 bg-slate-100 p-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300"
+              className={`block aspect-video w-full cursor-pointer overflow-hidden border-0 p-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-300 ${getPreviewContainerClassName(website.url)}`}
               type="button"
               onClick={(event) => {
                 if (isSelectingForDelete) {
