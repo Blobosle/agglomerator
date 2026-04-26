@@ -98,6 +98,7 @@ form.addEventListener("submit", async (event) => {
     }
 
     setStatus("Added");
+    window.close();
   } catch {
     setStatus("Closed");
   } finally {
