@@ -509,7 +509,7 @@ function WebsiteHeader({
           {displayUrl}
         </span>
         <span
-          className={`pointer-events-none absolute right-0 top-0 z-10 block origin-top overflow-hidden whitespace-normal break-words text-right transition-[max-height,transform] duration-300 ease-out group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
+          className={`pointer-events-none absolute right-0 top-0 z-10 block origin-top overflow-hidden whitespace-normal break-words text-right group-hover/link:max-h-40 group-hover/link:scale-y-100 group-focus-visible/link:max-h-40 group-focus-visible/link:scale-y-100 ${
             isKeyboardHighlighted ? "max-h-40 scale-y-100" : "max-h-0 scale-y-0"
           } ${
             isSelectingForDelete
