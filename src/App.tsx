@@ -436,7 +436,7 @@ function WebsiteHeader({
     <div className="relative grid min-h-5 grid-cols-[minmax(0,2fr)_minmax(4.5rem,1fr)] items-start gap-x-4">
       <div
         ref={nameColumnRef}
-        className={`group/name min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
+        className={`group/name relative min-w-0 select-text border-0 bg-transparent p-0 text-left font-medium text-slate-900 [font-family:SFMonoNerd,ui-monospace,SFMono-Regular,Menlo,monospace] focus-visible:outline-2 focus-visible:outline-offset-4 ${
           isSelectingForDelete
             ? isKeyboardHighlighted
               ? "cursor-pointer bg-red-700 text-white focus-visible:outline-red-300"
