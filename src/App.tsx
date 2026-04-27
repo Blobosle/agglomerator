@@ -955,6 +955,7 @@ function App() {
     activeIndex: keyboardNavigationIndex,
     isKeyboardMode,
     rememberHoveredIndex,
+    resetKeyboardModeToFirst,
     startKeyboardModeAtIndex,
     stopKeyboardMode,
   } = useWebsiteKeybindNavigation({
@@ -1049,6 +1050,22 @@ function App() {
       window.removeEventListener("keydown", handleUndoKeyDown);
     };
   }, [isSettingsWindow, undoDelete]);
+
+  useEffect(() => {
+    if (isSettingsWindow) {
+      return;
+    }
+
+    function handleWindowBlur() {
+      resetKeyboardModeToFirst();
+    }
+
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [isSettingsWindow, resetKeyboardModeToFirst]);
 
   if (isSettingsWindow) {
     return (

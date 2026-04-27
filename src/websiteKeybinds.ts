@@ -349,6 +349,11 @@ export function useWebsiteKeybindNavigation({
     setIsKeyboardMode(false);
   }, []);
 
+  const resetKeyboardModeToFirst = useCallback(() => {
+    setIsKeyboardMode(false);
+    setActiveIndex(itemCount === 0 ? null : 0);
+  }, [itemCount]);
+
   const rememberHoveredIndex = useCallback((index: number) => {
     setActiveIndex(index);
   }, []);
@@ -369,6 +374,7 @@ export function useWebsiteKeybindNavigation({
     activeIndex,
     isKeyboardMode,
     rememberHoveredIndex,
+    resetKeyboardModeToFirst,
     startKeyboardModeAtIndex,
     stopKeyboardMode,
   };
