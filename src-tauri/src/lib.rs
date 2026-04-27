@@ -269,7 +269,7 @@ fn configure_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let settings_item = MenuItem::with_id(
         app,
         SETTINGS_MENU_ID,
-        "Settings...",
+        "Settings",
         true,
         Some("CmdOrCtrl+,"),
     )?;

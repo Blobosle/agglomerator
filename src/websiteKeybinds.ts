@@ -8,12 +8,13 @@ export type KeyboardNavigationCommand =
   | "rowUp"
   | "rowDown"
   | "open"
+  | "undoDelete"
   | "enterDeleteMode"
   | "cancelDeleteMode";
 
 type WebsiteMovementCommand = Exclude<
   KeyboardNavigationCommand,
-  "open" | "enterDeleteMode" | "cancelDeleteMode"
+  "open" | "undoDelete" | "enterDeleteMode" | "cancelDeleteMode"
 >;
 
 type DirectionalMovementCommand = Exclude<
@@ -34,6 +35,7 @@ type UseWebsiteKeybindNavigationOptions = {
   onEnterDeleteMode: () => void;
   onMoveAboveFirstRow: () => void;
   onOpen: (index: number) => void;
+  onUndoDelete: () => void;
 };
 
 export const MAX_KEYBINDINGS_PER_COMMAND = 3;
@@ -46,6 +48,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingMap = {
   rowUp: ["ArrowUp"],
   rowDown: ["ArrowDown"],
   open: ["Enter"],
+  undoDelete: ["u"],
   enterDeleteMode: ["d"],
   cancelDeleteMode: ["Escape"],
 };
@@ -58,6 +61,7 @@ export const KEYBINDING_COMMAND_LABELS: Record<KeyboardNavigationCommand, string
   rowUp: "Row up",
   rowDown: "Row down",
   open: "Open entry",
+  undoDelete: "Undo delete",
   enterDeleteMode: "Enter delete mode",
   cancelDeleteMode: "Cancel delete mode",
 };
@@ -212,6 +216,7 @@ export function useWebsiteKeybindNavigation({
   onEnterDeleteMode,
   onMoveAboveFirstRow,
   onOpen,
+  onUndoDelete,
 }: UseWebsiteKeybindNavigationOptions) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
@@ -256,6 +261,12 @@ export function useWebsiteKeybindNavigation({
         event.preventDefault();
         setIsKeyboardMode(true);
         onEnterDeleteMode();
+        return;
+      }
+
+      if (command === "undoDelete") {
+        event.preventDefault();
+        onUndoDelete();
         return;
       }
 
@@ -331,6 +342,7 @@ export function useWebsiteKeybindNavigation({
     onEnterDeleteMode,
     onMoveAboveFirstRow,
     onOpen,
+    onUndoDelete,
   ]);
 
   const stopKeyboardMode = useCallback(() => {

@@ -968,6 +968,9 @@ function App() {
     onEnterDeleteMode: () => setIsSelectingForDelete(true),
     onMoveAboveFirstRow: focusSearchInput,
     onOpen: openWebsiteAtIndex,
+    onUndoDelete: () => {
+      void undoDelete().catch(() => undefined);
+    },
   });
 
   async function deleteWebsite(website: WebsiteRecord) {
@@ -1029,15 +1032,10 @@ function App() {
         return;
       }
 
-      const isUndoShortcut =
-        event.key === "u" && !event.metaKey && !event.ctrlKey;
       const isMacUndoShortcut =
         event.key.toLowerCase() === "z" && event.metaKey && !event.ctrlKey;
 
-      if (
-        (!isUndoShortcut && !isMacUndoShortcut) ||
-        isTextEditingTarget(event.target)
-      ) {
+      if (!isMacUndoShortcut || isTextEditingTarget(event.target)) {
         return;
       }
 
