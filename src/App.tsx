@@ -1069,9 +1069,9 @@ function App() {
 
   if (isSettingsWindow) {
     return (
-      <main className="min-h-screen bg-white text-slate-950">
+      <main className="min-h-screen select-none bg-white text-slate-950">
         <div
-          className="h-8 bg-white"
+          className="h-8 select-none bg-white"
           data-tauri-drag-region
           onPointerDown={startWindowDrag}
         />
