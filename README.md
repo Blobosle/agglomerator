@@ -18,4 +18,3 @@ To compile the app for your desktop run the following command in at the root of 
 $ npm install
 $ npm run tauri build
 ```
-grammar pass
